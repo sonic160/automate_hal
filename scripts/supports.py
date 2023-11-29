@@ -644,6 +644,13 @@ class automate_hal:
 		author = root.find(biblStructPath+'/tei:analytic/tei:author', ns)
 		eAnalytic.remove(author)
 
+		# Locate the back section of the xml file.
+		eBack = root.find('tei:text/tei:back/tei:listOrg', ns)
+		eOrg = root.find('tei:text/tei:back/tei:listOrg/tei:org', ns)
+		eBack.remove(eOrg)
+
+		new_affiliation_idx = 0
+		new_affliation = []
 		for aut in auths : 
 			role  = 'aut' if not aut['corresp'] else 'crp' #correspond ou non
 			eAuth = ET.SubElement(eAnalytic, 'author', {'role':role}) 
@@ -673,7 +680,7 @@ class automate_hal:
 				idHAL.text = aut['idHAL']
 
 			#if applicable add structId
-			if aut['affil_id'] : 			
+			if aut['affil_id']: 			
 				# Split the comma-separated ids into a list
 				affil_ids = aut['affil_id'].split(', ')
 
@@ -690,8 +697,42 @@ class automate_hal:
 
 					# Store the 'eAffiliation_i' element in the dictionary with the current id as the key
 					eAffiliation_dict[affil_id] = eAffiliation_i
+			else: # If not, add the affiliation manually.
+				aut_affil = aut['affil']
+				if aut_affil.endswith('; '):
+					aut_affil = aut_affil.rstrip('; ')
 
+				if new_affiliation_idx == 0:
+					new_affiliation_idx += 1
+					eBackOrg_i = ET.SubElement(eBack, 'org')
+					eBackOrg_i.set('type', 'institution')
+					eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
+					eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
+					eBackOrg_i_name.text = aut_affil
+					eBackOrg_i.tail = '\n'+'\t'*4
+					new_affliation.append(aut_affil)
 
+					eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+					eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+				else:
+					try:
+						idx = new_affliation.index(aut_affil)
+						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+						eAffiliation_manual.set('ref', 'localStruct-' + str(idx+1))	
+					except ValueError:
+						new_affiliation_idx += 1
+						eBackOrg_i = ET.SubElement(eBack, 'org')
+						eBackOrg_i.set('type', 'institution')
+						eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
+						eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
+						eBackOrg_i_name.text = aut_affil
+						eBackOrg_i.tail = '\n'+'\t'*4
+						new_affliation.append(aut_affil)	
+
+						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+						eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))		
+						
+					
 		## ADD SourceDesc / bibliStruct / monogr : isbn
 		eMonogr = root.find(biblStructPath+'/tei:monogr', ns)
 		index4meeting = 0

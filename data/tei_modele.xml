@@ -9,11 +9,6 @@
         suppr : <idno type="localRef">LKB-FLQ</idno>
         keywords : suppression des keywords de sorte à en laisser un seul
         suppresion de <classCode scheme="classification">03.65.Ta, 03.65.ud, 03.67.a</classCode>
-        suppression de tout le contenu situé dessous  <back>
-            <listOrg type="structures">
-                <org type="laboratory" xml:id="struct-1"/>
-            </listOrg>
-        </back>
      --> 
     <text>
         <body>
@@ -86,5 +81,12 @@
                 </biblFull>
             </listBibl>
         </body>
+        <back>
+            <listOrg type="structures">
+                <org type="institution" xml:id="struct-1">
+                    <orgName>Department of Energy, Politecnico di Milano </orgName>
+                </org>
+            </listOrg>
+        </back>
     </text>
 </TEI>
