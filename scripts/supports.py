@@ -602,7 +602,6 @@ class automate_hal:
 			for fund in dataTei['funders']: 
 				eFunder = ET.SubElement(eTitleStmt, 'funder')
 				eFunder.text = fund.replace('\n', ' ').replace('\r', ' ')
-				eFunder.tail='\n' + '\t'*6
 
 		#___CHANGE editionStmt : suppr
 		eBiblFull = root.find(biblFullPath, ns)
@@ -654,7 +653,6 @@ class automate_hal:
 		for aut in auths : 
 			role  = 'aut' if not aut['corresp'] else 'crp' #correspond ou non
 			eAuth = ET.SubElement(eAnalytic, 'author', {'role':role}) 
-			eAuth.tail='\n\n' + '\t'*7
 			ePers = ET.SubElement(eAuth, 'persName')
 
 			eForename = ET.SubElement(ePers, 'forename', {'type':"first"})
@@ -709,7 +707,6 @@ class automate_hal:
 					eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
 					eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
 					eBackOrg_i_name.text = aut_affil
-					eBackOrg_i.tail = '\n'+'\t'*4
 					new_affliation.append(aut_affil)
 
 					eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
@@ -726,7 +723,6 @@ class automate_hal:
 						eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
 						eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
 						eBackOrg_i_name.text = aut_affil
-						eBackOrg_i.tail = '\n'+'\t'*4
 						new_affliation.append(aut_affil)	
 
 						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
@@ -875,6 +871,7 @@ class automate_hal:
 		root.attrib["xmlns:hal"] = "http://hal.archives-ouvertes.fr/"
 
 		xml_path = './data/outputs/TEI/' + docId['eid'] + ".xml"
+		ET.indent(tree, space="\t", level=0)
 		tree.write(xml_path,
 				xml_declaration=True,
 				encoding="utf-8",
