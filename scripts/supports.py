@@ -366,6 +366,39 @@ class automate_hal:
 		num = fromHal['response'].get('numFound')
 		docs = fromHal['response'].get('docs', [])
 		return [num, docs]
+	
+
+	def reqHalRef(self, ref_name, value=""):
+		"""
+		Performs a request to the HAL API to get references to some fields.
+
+		Parameters:
+		- ref_name (str): Reference field that you want information (e.g., 'structure', 'author').
+		- value (str): Value to search for (default: "").
+
+		Returns:
+		list: List containing the number of items found and a list of HAL documents.
+			Example: [2, [{'docid': 'uri1'}, {'docid': 'uri2'}]]
+		"""
+
+		prefix = 'https://api.archives-ouvertes.fr/ref/'
+		suffix = "&fl=docid&wt=json"
+		req = prefix + ref_name + '/?q=' + value + suffix
+		found = False
+
+		# Perform the request until a valid JSON response is obtained
+		while not found:
+			req = requests.get(req)
+			try:
+				fromHal = req.json()
+				found = True
+			except:
+				pass
+
+		num = fromHal['response'].get('numFound')
+		docs = fromHal['response'].get('docs', [])
+
+		return [num, docs]
 
 
 	def retrieveScopusAuths(self, auths):
@@ -585,7 +618,13 @@ class automate_hal:
 
 		Returns:
 		ElementTree: TEI tree.
-		"""	
+		"""
+
+		# Verify inputs:
+		# If stamps is not a list, make it a list
+		if not isinstance(stamps, list):
+			stamps = [stamps]
+
 		tree = ET.parse('./data/tei_modele.xml')
 		root = tree.getroot()
 		ET.register_namespace('',"http://www.tei-c.org/ns/1.0")
@@ -644,12 +683,15 @@ class automate_hal:
 		eAnalytic.remove(author)
 
 		# Locate the back section of the xml file.
-		eBack = root.find('tei:text/tei:back/tei:listOrg', ns)
+		eListOrg = root.find('tei:text/tei:back/tei:listOrg', ns)
 		eOrg = root.find('tei:text/tei:back/tei:listOrg/tei:org', ns)
-		eBack.remove(eOrg)
+		eListOrg.remove(eOrg)
 
+		# Reset new affiliation index and list.
 		new_affiliation_idx = 0
 		new_affliation = []
+
+		# For each author, write author information to the xml tree.
 		for aut in auths : 
 			role  = 'aut' if not aut['corresp'] else 'crp' #correspond ou non
 			eAuth = ET.SubElement(eAnalytic, 'author', {'role':role}) 
@@ -677,57 +719,72 @@ class automate_hal:
 				idHAL = ET.SubElement(eAuth,'idno', {'type':'idhal'})
 				idHAL.text = aut['idHAL']
 
-			#if applicable add structId
-			if aut['affil_id']: 			
-				# Split the comma-separated ids into a list
-				affil_ids = aut['affil_id'].split(', ')
+			# Get the affilication.
+			aut_affil = aut['affil']
+			# Remove the ';' at the end of the affiliation. 
+			if aut_affil.endswith('; '):
+				aut_affil = aut_affil.rstrip('; ')
+			
+			# If aut['affil_id'] is not provided by the database, 
+			# search HAL to see if the affiliation is already in the HAL.			
+			if not aut['affil_id']:
+				search_result = self.reqHalRef(ref_name='structure', value=aut_affil)
+				if search_result[0] > 0: # Existed in HAL.
+					# Set affil_id
+					aut['affil_id'] = search_result[1][0]['docid']
 
+			# if applicable add structId
+			if aut['affil_id']:
+				affil_ids = aut['affil_id'].split(', ') 			
 				# Dictionary to store eAffiliation elements
 				eAffiliation_dict = {}
-
 				# Create an 'affiliation' element for each id
 				for affil_id in affil_ids:
 					# Create a new 'affiliation' element under the 'eAuth' element
 					eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-
 					# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
 					eAffiliation_i.set('ref', '#struct-' + affil_id)
-
 					# Store the 'eAffiliation_i' element in the dictionary with the current id as the key
 					eAffiliation_dict[affil_id] = eAffiliation_i
 			else: # If not, add the affiliation manually.
-				aut_affil = aut['affil']
-				if aut_affil.endswith('; '):
-					aut_affil = aut_affil.rstrip('; ')
-
+				# If it is the first new affiliation, create directly.
 				if new_affiliation_idx == 0:
-					new_affiliation_idx += 1
-					eBackOrg_i = ET.SubElement(eBack, 'org')
+					new_affiliation_idx += 1 # Update the index.
+					# Create the new organization.
+					eBackOrg_i = ET.SubElement(eListOrg, 'org')
 					eBackOrg_i.set('type', 'institution')
 					eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
 					eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
 					eBackOrg_i_name.text = aut_affil
 					new_affliation.append(aut_affil)
-
+					# Make reference to the created affliation.
 					eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
 					eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
-				else:
+				else: # If it is not the first new affiliation, search if it has been created by us before.
 					try:
 						idx = new_affliation.index(aut_affil)
+						# If it has been created, make reference to it.
 						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
 						eAffiliation_manual.set('ref', 'localStruct-' + str(idx+1))	
-					except ValueError:
+					except ValueError: # If not created, create a new one.
+						# Update the index.
 						new_affiliation_idx += 1
-						eBackOrg_i = ET.SubElement(eBack, 'org')
+						# Create the new organization.
+						eBackOrg_i = ET.SubElement(eListOrg, 'org')
 						eBackOrg_i.set('type', 'institution')
 						eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
 						eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
 						eBackOrg_i_name.text = aut_affil
 						new_affliation.append(aut_affil)	
-
+						# Make reference to the created affliation.
 						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-						eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))		
-						
+						eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+
+		# In the end, if no new affiliations are added, remove the 'eBack' element.
+		if new_affiliation_idx == 0:
+			eBack_Parent = root.find('tei:text', ns)
+			eBack = root.find('tei:text/tei:back', ns)
+			eBack_Parent.remove(eBack)						
 					
 		## ADD SourceDesc / bibliStruct / monogr : isbn
 		eMonogr = root.find(biblStructPath+'/tei:monogr', ns)
@@ -738,7 +795,6 @@ class automate_hal:
 			eIsbn = ET.Element('idno', {'type':'isbn'})
 			eIsbn.text = dataTei["isbn"]
 			eMonogr.insert(0, eIsbn)
-
 
 		## ADD SourceDesc / bibliStruct / monogr : issn
 		# if journal is in Hal
@@ -772,8 +828,6 @@ class automate_hal:
 			eMonogr.insert(1 , eTitleOuv)
 			index4meeting+=2
 
-
-
 		## ADD SourceDesc / bibliStruct / monogr / meeting : meeting
 		if dataTei['doctype'] == 'COMM' : 
 			#conf title
@@ -793,14 +847,11 @@ class automate_hal:
 			#country
 			eSettlement = ET.SubElement(eMeeting, 'country',{'key':'fr'})
 
-
 		#___ ADD SourceDesc / bibliStruct / monogr : Editor
 		if doc['Editors'] : 
 			eEditor = ET.Element('editor')
 			eEditor.text = doc['Editors']
 			eMonogr.insert(index4meeting+1,eEditor)
-			
-
 
 		#___ CHANGE  sourceDesc / monogr / imprint :  vol, issue, page, pubyear, publisher
 		eImprint = root.find(biblStructPath+'/tei:monogr/tei:imprint', ns)
@@ -814,7 +865,6 @@ class automate_hal:
 					e.text = ""
 			if e.tag.endswith('date') : e.text = doc['Year']
 			if e.tag.endswith('publisher') : e.text = doc['Publisher']
-
 
 		#_____ADD  sourceDesc / biblStruct : DOI & Pubmed
 		eBiblStruct = root.find(biblStructPath, ns)
@@ -831,12 +881,9 @@ class automate_hal:
 		eLanguage = root.find(biblFullPath+'/tei:profileDesc/tei:langUsage/tei:language', ns)
 		eLanguage.attrib['ident'] = dataTei["language"]
 
-
-
 		#___CHANGE  profileDesc / textClass / keywords/ term
 		eTerm = root.find(biblFullPath+'/tei:profileDesc/tei:textClass/tei:keywords/tei:term', ns)
 		eTerm.text = doc['Author Keywords']
-
 
 		#___CHANGE  profileDesc / textClass / classCode : hal domaine & hal doctype
 		eTextClass = root.find(biblFullPath+'/tei:profileDesc/tei:textClass', ns)
@@ -844,7 +891,6 @@ class automate_hal:
 			if e.tag.endswith('classCode') : 
 				if e.attrib['scheme'] == 'halDomain': e.attrib['n'] = dataTei['domain']
 				if e.attrib['scheme'] == 'halTypology': e.attrib['n'] = dataTei['doctype']
-
 
 		#___CHANGE  profileDesc / abstract 
 		eAbstract = root.find(biblFullPath+'/tei:profileDesc/tei:abstract', ns)
