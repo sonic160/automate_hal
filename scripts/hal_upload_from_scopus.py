@@ -19,6 +19,7 @@ if __name__ == "__main__":
         if i < min(rowRange) : continue
         elif i > max(rowRange) : break
 
+        # Get the ids of each paper.
         docId = {'eid': doc['EID'] , 'scopusLink': doc['Link'] , 'doi': doc['DOI']}
         print(f"\nite_{i}\n{docId['eid']}")
 
@@ -55,11 +56,10 @@ if __name__ == "__main__":
 
         # Produce TEI file.
         titles = auto_hal.getTitles(doc['Title'])
-
         dataTei = auto_hal.prepareData(doc, auths, docId['doctype'])
         docTei = auto_hal.produceTeiTree(doc, auths, dataTei, titles)
         xml_path = auto_hal.exportTei(docId, docTei, auths)
-        auto_hal.hal_upload(xml_path)
+        auto_hal.hal_upload(docId, xml_path)
 
-
+    # Close all the files. End the program.
     auto_hal.close_files()

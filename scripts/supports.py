@@ -3,7 +3,46 @@ import xml.etree.ElementTree as ET
 
 
 class automate_hal:
+	"""
+    A class for automating the generation and upload of TEI XML files to the HAL repository.
+
+    Attributes:
+    - hal_user_name (str): HAL username for authentication.
+    - hal_pswd (str): HAL password for authentication.
+    - apikey (str): API key for accessing the Scopus API.
+    - insttoken (str): Scopus institution token for API access.
+    - AuthDB (dict): A dictionary storing valid authors' information loaded from a local file.
+    - docs_table (file): A CSV file for logging system activities.
+    - writeDoc (csv.writer): CSV writer for adding rows to the system log.
+
+    Methods:
+    - __init__: Initializes the automate_hal object with HAL credentials, Scopus API keys, and loads valid authors' data.
+    - extractCorrespEmail: Extracts corresponding author emails from a list of authors and corresponding addresses.
+    - extractRawAffil: Extracts raw affiliations from a Scopus table and associates them with authors.
+    - loadTables_and_createOutpus: Loads local data and initializes system log files and credentials.
+    - matchDocType: Matches Scopus document types to HAL document types.
+    - addRow: Adds a row to the system log CSV file with information about a document's processing.
+    - reqWithIds: Searches HAL to check if a DOI or PubMed ID is already present in the repository.
+    - reqWithTitle: Searches HAL for a document with a given title.
+    - reqHal: Sends a request to the HAL API and retrieves the number of items found and document details.
+    - retrieveScopusAuths: Retrieves additional author information (forename and ORCID) from the Scopus API.
+    - reqScopus: Sends a request to the Scopus API and returns the JSON response.
+    - enrichWithAuthDB: Completes author data with information from a local file containing valid authors.
+    - getTitles: Extracts titles from a Scopus table.
+    - close_files: Closes open CSV files.
+
+    TEI XML Generation and HAL Upload Methods:
+    - prepareData: Structures data as expected by the TEI format, including funding details, journal information, and more.
+    - produceTeiTree: Generates a TEI XML tree based on the provided document data, authors, and titles.
+    - exportTei: Exports TEI data to an XML file, adds a row to the system log, and returns the XML file path.
+    - hal_upload: Uploads a TEI XML file to the HAL repository using the SWORD protocol.
+    """
+
+
 	def __init__(self):
+		'''
+		Initialize the automate_hal object with HAL credentials, Scopus API keys, and loads valid authors' data.
+		'''
 		self.apikey = ''
 		self.insttoken = ''
 		self.hal_user_name = ''
@@ -14,213 +53,358 @@ class automate_hal:
 		
 
 	def loadBibliography(self, path):
+		"""
+		Load bibliography data from a CSV file.
+
+		Parameters:
+		- path (str): The path to the CSV file containing bibliography data.
+
+		Returns:
+		- csv.DictReader: A DictReader object for reading data from the CSV file.
+		"""
+		# Open the CSV file with proper encoding and return a DictReader
 		t = open(path, newline='', encoding='utf-8-sig')
 		return csv.DictReader(t)
 
 
 	def extractAuthors(self, authors, authId):
-		''' from table Extract surname and initial foremane and authid
-		ex de liste de nom : 
-		Taher Y., Haque R., AlShaer M., v. d. Heuvel W.J., Zeitouni K., Araujo R., Hacid M.-S., 
-		il peut mm avoir des des virgules pour le nom d'un auteur doi.org/10.1002/rcm.8244
-		'''
-		## CODE PROBLEM WITH this data :   Scott R.T., Jr., de Ziegler D. : PRODUCE ERROR boz it sees 3 auths
+		"""
+		Extracts author information from a given list of authors and their corresponding IDs.
 
+		Parameters:
+		- authors (str): A string containing a list of authors separated by commas.
+		- authId (str): A string containing author IDs separated by semicolons.
+
+		Returns:
+		- list: A list of dictionaries, each containing author information such as surname, initial,
+				Scopus ID, and placeholders for other details like ORCID, email, correspondence,
+				affiliation, and affiliation ID.
+		"""
+		# Split the input strings to get lists of authors and author IDs
 		authors_cut = authors.split(',')
 		authId_cut = authId[:-1].split(';')
-		if not len(authors_cut) == len(authId_cut) : 
-			print("pb : nb auth et nb authId ne correspondent pas ")
+
+		# Check if the number of authors and author IDs match
+		if not len(authors_cut) == len(authId_cut):
+			print("Error: The number of authors and author IDs do not match.")
 			quit()
-		
+
+		# Initialize an empty list to store author information
 		auths = []
+		
+		# Iterate through each author in the list
 		for auth_idx, auth in enumerate(authors_cut):
-			
-			if '.' not in auth : #escape les groupements d'auteur
-				print(f"\tauteur échappé\t{auth}")
+			# Check for special cases where author names are grouped, and skip them
+			if '.' not in auth:
+				print(f"\tEscaped author:\t{auth}")
 				continue
-			
-			auth = auth.strip() # le Nom P.
-			elem = auth.split() 
-			#le surname est le dernier élément qui ne finit pas par un point
-			for i in reversed(range( len(elem))) : 
+
+			# Process the author name to extract surname and initials
+			auth = auth.strip()
+			elem = auth.split()
+
+			# Identify the surname and initials
+			for i in reversed(range(len(elem))):
 				if not elem[i].endswith('.'):
 					idx = auth.index(elem[i]) + len(elem[i])
-					surname = auth[: idx]
+					surname = auth[:idx]
 					initial = auth[idx:].strip()
-					#print(surname,'\t', intial )
 					break
-					
-			if len(surname) == 0 or len(initial) < 1 : 
-				print('!! pb id name \t',auth)
-				quit()			
-			
-			auths.append(
-				{'surname': surname, 
-				'initial': initial, 
+
+			# Check for potential issues with extracted names
+			if len(surname) == 0 or len(initial) < 1:
+				print('!! Issue with author name:\t', auth)
+				quit()
+
+			# Append author information to the list
+			auths.append({
+				'surname': surname,
+				'initial': initial,
 				'forename': False,
 				'scopusId': authId_cut[auth_idx],
 				'orcid': False,
-				'mail': False, 
+				'mail': False,
 				'corresp': False,
 				'affil': '',
 				'affil_id': ''
-				})
-			
+			})
+
 		return auths
 
+	
+
 	def extractCorrespEmail(self, auths, corresp):
-		for item in auths : 
-			for addr in corresp.split('\n')  : # Address Corresp can contains many lines, many emails
-				if addr.startswith(item["surname"]) : 
+		"""
+		Extracts corresponding author email addresses from a given list of authors and corresponding addresses.
+
+		Parameters:
+		- auths (list): A list of dictionaries containing author information.
+		- corresp (str): A string containing corresponding author addresses, where each address may span multiple lines.
+
+		Returns:
+		- list: The updated list of dictionaries with added email and correspondence information.
+		"""
+		# Iterate through each author in the list
+		for item in auths:
+			# Iterate through each line in the corresponding author addresses
+			for addr in corresp.split('\n'):
+				# Check if the address starts with the author's surname
+				if addr.startswith(item["surname"]):
+					# Extract email address from the line
 					mail = [elem for elem in addr.split(" ") if "@" in elem]
-					if mail : 
+					if mail:
+						# Update author information with email and set correspondence flag
 						item['mail'] = mail[0]
 						item['corresp'] = True
 						break
-							
+
 		return auths
 
 
-	def extractRawAffil(self, auths, rawAffils):	
-		'''extract raw affil from scopus table'''
-		#il faut partir du début, aller jusqu'au 2e nom, et cela délimite la 1er affil
-		
+	def extractRawAffil(self, auths, rawAffils):
+		"""
+		Extracts raw affiliations from a Scopus table based on author information.
+
+		Parameters:
+		- auths (list): A list of dictionaries containing author information.
+		- rawAffils (str): A string containing raw affiliation information from a Scopus table.
+
+		Returns:
+		- list: The updated list of dictionaries with added affiliation information.
+		"""
+		# Get the total number of authors
 		nbAuth = len(auths)
 		i = 1
-		while i <= nbAuth :
-			preFullName = auths[i-1]['surname']+", "+auths[i-1]['initial']
+		# Iterate through each author
+		while i <= nbAuth:
+			# Construct the full name of the current author
+			preFullName = auths[i-1]['surname'] + ", " + auths[i-1]['initial']
 
-			if i == nbAuth :
-				aff = rawAffils[ rawAffils.index(preFullName) : ]    
-			else :
-				postFullName = auths[i]['surname']+", "+auths[i]['initial']
-				aff = rawAffils[ rawAffils.index(preFullName) : rawAffils.index(postFullName)]
+			if i == nbAuth:
+				# If it's the last author, extract affiliation from the current author to the end
+				aff = rawAffils[rawAffils.index(preFullName):]
+			else:
+				# If it's not the last author, construct the full name of the next author
+				postFullName = auths[i]['surname'] + ", " + auths[i]['initial']
+				# Extract affiliation from the current author to the next author
+				aff = rawAffils[rawAffils.index(preFullName):rawAffils.index(postFullName)]
 
-			#exclude name in affil
-			nameLen = len(preFullName+', ')
-			# affils.append(aff[nameLen: ])
-			auths[i-1]['affil'] = aff[nameLen: ]
-			i+=1       
+			# Exclude the author's name from the affiliation
+			nameLen = len(preFullName + ', ')
+			# Update author information with affiliation
+			auths[i-1]['affil'] = aff[nameLen:]
+			i += 1
 
 		return auths
 
 
 	def loadTables_and_createOutpus(self, perso_data_path, author_db_path):
-		# load local data : path and personal data
-		with open(perso_data_path) as fh : 
+		"""
+		Loads local data, HAL credentials, Scopus API keys, and valid authors database.
+		Initializes CSV output for system log.
+
+		Parameters:
+		- perso_data_path (str): Path to the personal data file.
+		- author_db_path (str): Path to the valid authors database file.
+
+		Returns:
+		None
+		"""
+		# Load local data: path and personal data
+		with open(perso_data_path) as fh:
 			local_data = json.load(fh)
 
-		# Get HAL credentials.	
+		# Get HAL credentials
 		self.hal_user_name = local_data.get("perso_login_hal")
 		self.hal_pswd = local_data.get("perso_mdp_hal")
-		
-		# Scopus api keys
+
+		# Scopus API keys
 		self.apikey = local_data.get("perso_scopusApikey")
 		self.insttoken = local_data.get("perso_scopusInstToken")
 
-		# load valid authors db
+		# Load valid authors database
 		with open(author_db_path, 'r', encoding="utf-8") as auth_fh:
 			reader = csv.DictReader(auth_fh)
 			self.AuthDB = {row['key']: row for row in reader}
 
-		# csv output for system log.
+		# CSV output for system log
 		self.docs_table = open('./data/outputs/log.csv', 'w', newline='', encoding="utf8")
-		self.writeDoc = csv.writer(self.docs_table, delimiter =',')
+		self.writeDoc = csv.writer(self.docs_table, delimiter=',')
+		# Write header to the CSV file
 		self.writeDoc.writerow(['eid', 'doi', 'doctype', 'state', 'treat_info', 'hal_match', 'halUris', 'email_corr_auth'])
 
 
 	def matchDocType(self, doctype):
-		doctype_scopus2hal = {'Article': 'ART', 'Article in Press' : 'ART', 'Review':'ART', 'Business Article':'ART', "Data Paper":"ART", 'Conference Paper':'COMM',\
-	'Conference Review':'COMM', 'Book':'OUV', 'Book Chapter':'COUV'}
-		
-		if doctype in doctype_scopus2hal.keys() :
+		"""
+		Matches Scopus document types to HAL document types.
+
+		Parameters:
+		- doctype (str): Scopus document type.
+
+		Returns:
+		str or False: Corresponding HAL document type or False if no match.
+		"""
+		# Dictionary mapping Scopus document types to HAL document types
+		doctype_scopus2hal = {
+			'Article': 'ART', 'Article in Press': 'ART', 'Review': 'ART', 'Business Article': 'ART',
+			"Data Paper": "ART", 'Conference Paper': 'COMM',
+			'Conference Review': 'COMM', 'Book': 'OUV', 'Book Chapter': 'COUV'
+		}
+
+		# Check if the provided Scopus document type is in the mapping
+		if doctype in doctype_scopus2hal.keys():
+			# Return the corresponding HAL document type
 			return doctype_scopus2hal[doctype]
-		else :
+		else:
+			# Return False if no match is found
 			return False
 
 
 	def addRow(self, docId, state, treat_info='', hal_match='', uris='', emails=''):
+		"""
+		Adds a row to the CSV log file.
+
+		Parameters:
+		- docId (dict): Dictionary containing document information (eid, doi, doctype, etc.).
+		- state (str): State of the document.
+		- treat_info (str): Additional treatment information (default: '').
+		- hal_match (str): HAL matching information (default: '').
+		- uris (list): List of HAL URIs (default: '').
+		- emails (str): Emails related to the document (default: '').
+
+		Returns:
+		None
+		"""
 		print(f"added to csv: state = {state}")
 		self.writeDoc.writerow([docId['eid'], docId['doi'], docId['doctype'],
-		state, treat_info, hal_match, ', '.join(uris), emails ])
-		
+							state, treat_info, hal_match, ', '.join(uris), emails ])
+
 
 	def reqWithIds(self, doi):
-		"""recherche dans HAL si le DOI ou PUBMEDID est déjà présent """	
-		idInHal = [0,[]] #nb of item, list of uris
-		
-		reqId = self.reqHal('doiId_id:', doi )
-		idInHal[0] = reqId[0]	
-		for i in reqId[1] : 
+		"""
+		Searches in HAL to check if the DOI or PUBMEDID is already present.
+
+		Parameters:
+		- doi (str): Document DOI or PUBMEDID.
+
+		Returns:
+		list: List containing the number of items found and a list of HAL URIs.
+			Example: [2, ['uri1', 'uri2']]
+		"""
+		idInHal = [0, []]  # Number of items, list of URIs
+
+		# Perform a HAL request to find documents by DOI
+		reqId = self.reqHal('doiId_id:', doi)
+		idInHal[0] = reqId[0]
+
+		# Append HAL URIs to the result list
+		for i in reqId[1]:
 			idInHal[1].append(i['uri_s'])
 
 		return idInHal
 
 
 	def reqWithTitle(self, titles):
-		"""recherche dans HAL si une notice avec le mm titre existe """
-		
-		titleInHal = [0,[]] 
+		"""
+		Searches in HAL to check if a record with the same title exists.
 
-		reqTitle = self.reqHal('title_t:\"', titles+ '\"')
-		for i in reqTitle[1] : 
+		Parameters:
+		- titles (list): List of titles to search for.
+
+		Returns:
+		list: List containing the number of items found and a list of HAL URIs.
+			Example: [2, ['uri1', 'uri2']]
+		"""
+		titleInHal = [0, []]
+
+		# Perform a HAL request to find documents by title
+		reqTitle = self.reqHal('title_t:\"', titles + '\"')
+
+		# Append HAL URIs to the result list
+		for i in reqTitle[1]:
 			titleInHal[1].append(i['uri_s'])
-		
-		#test avec le 2nd titre
-		if len(titles[1]) > 3: 
-			reqTitle_bis = self.reqHal('title_t:\"', titles[1]+ '\"')
+
+		# Test with the second title
+		if len(titles[1]) > 3:
+			reqTitle_bis = self.reqHal('title_t:\"', titles[1] + '\"')
 			reqTitle[0] += reqTitle_bis[0]
-			
-			for i in reqTitle_bis[1] : 
+
+			for i in reqTitle_bis[1]:
 				titleInHal[1].append(i['uri_s'])
-			
-		titleInHal[0] = reqTitle[0] 
+
+		titleInHal[0] = reqTitle[0]
 		return titleInHal
 
 
-	def reqHal(self, field, value = ""):
-		prefix= 'https://api.archives-ouvertes.fr/search/?' #halId_s
+	def reqHal(self, field, value=""):
+		"""
+		Performs a request to the HAL API based on the specified field and value.
+
+		Parameters:
+		- field (str): Field to search in (e.g., 'title_t', 'doiId_id').
+		- value (str): Value to search for (default: "").
+
+		Returns:
+		list: List containing the number of items found and a list of HAL documents.
+			Example: [2, [{'uri_s': 'uri1', 'title_s': 'Title 1'}, {'uri_s': 'uri2', 'title_s': 'Title 2'}]]
+		"""
+		prefix = 'https://api.archives-ouvertes.fr/search/?'
 		suffix = "&fl=uri_s,title_s&wt=json"
-		req = prefix + '&q='+ field + value+ suffix
+		req = prefix + '&q=' + field + value + suffix
 		found = False
-		while not found : 
+
+		# Perform the request until a valid JSON response is obtained
+		while not found:
 			req = requests.get(req)
-			try : 
+			try:
 				fromHal = req.json()
 				found = True
-			except : 
+			except:
 				pass
-		
+
 		num = fromHal['response'].get('numFound')
 		docs = fromHal['response'].get('docs', [])
 		return [num, docs]
 
 
 	def retrieveScopusAuths(self, auths):
-		if not self.apikey : 
-			return auths
-		""" from scopus get forename and orcid
-		memo : si on pousse un orcid qui est attaché à un idHAL alors l'idHAL s'ajoute automatiquement """
-		
-		for item in auths :
+		"""
+		Retrieves additional information (forename and ORCID) from Scopus for each author.
 
-			if item["forename"] and item["orcid"] : continue
-			
+		Parameters:
+		- auths (list): List of author dictionaries.
+
+		Returns:
+		list: Updated list of author dictionaries with additional information.
+		"""
+		# If no Scopus API key is provided, return the original author list
+		if not self.apikey:
+			return auths
+
+		# Iterate through each author in the list
+		for item in auths:
+			# If both forename and ORCID are already present, skip to the next author
+			if item["forename"] and item["orcid"]:
+				continue
+
 			try:
-				req = self.reqScopus('author?author_id='+ item['scopusId']+'&field=surname,given-name,orcid')
-				try : 
-					# a faire evoluer pour intégrer les alias eg 57216794169
+				# Make a request to Scopus API to retrieve additional author information
+				req = self.reqScopus('author?author_id=' + item['scopusId'] + '&field=surname,given-name,orcid')
+
+				try:
+					# Handle response structure variations
 					req = req['author-retrieval-response'][0]
-				except : 
+				except:
 					pass
 
-				#get forname
-				if not item["forename"] and req.get("preferred-name"): 
+				# Get forename
+				if not item["forename"] and req.get("preferred-name"):
 					item["forename"] = req["preferred-name"].get('given-name')
-				
-				#get orcid 
-				if not item["orcid"] and req.get("coredata") : 
+
+				# Get ORCID
+				if not item["orcid"] and req.get("coredata"):
 					item['orcid'] = req['coredata'].get("orcid")
+
 			except:
 				pass
 
@@ -228,131 +412,178 @@ class automate_hal:
 
 
 	def reqScopus(self, suffix):
-		prefix = "https://api.elsevier.com/content/"	
-		req = requests.get(prefix+suffix, 
-			headers={'Accept':'application/json',
-			'X-ELS-APIKey': self.apikey
-			})	
+		"""
+		Sends a request to the Scopus API and returns the JSON response.
+
+		Parameters:
+		- suffix (str): The endpoint suffix for the API request.
+
+		Returns:
+		dict: The JSON response from the Scopus API.
+		"""
+		prefix = "https://api.elsevier.com/content/"
+		req = requests.get(
+			prefix + suffix,
+			headers={'Accept': 'application/json', 'X-ELS-APIKey': self.apikey}
+		)
 		req = req.json()
-		if req.get("service-error") : 
-			print(f"\n\n!!probleme API scopus : \n\n{req}")
+
+		# Check for API service errors
+		if req.get("service-error"):
+			print(f"\n\n!!problem with Scopus API:\n\n{req}")
 			quit()
+
 		return req
 
 
 	def enrichWithAuthDB(self, auths):
-		""" complete auth data w local file 'validUvsqAuth' """
+		"""
+		Completes author data with information from the local file 'validUvsqAuth'.
+
+		Parameters:
+		- auths (list): List of author dictionaries.
+
+		Returns:
+		list: Updated list of author dictionaries with additional information.
+		"""
 		for item in auths:
-			key = item['surname']+' '+item['initial']
-			if key in self.AuthDB: 
-				fields = ['forename', 'affil_id'] ##on ne prend pas le mail enregistré sur notre base local
-				# if nothing from scopus but present in local db then add value
-				for f in fields : 
-					# if nothing is present then we enrich w uvsq auth db
-					if not item[f] : item[f] = self.AuthDB[key][f]
+			key = item['surname'] + ' ' + item['initial']
+			if key in self.AuthDB:
+				fields = ['forename', 'affil_id']  # Exclude email from the local database
+				# If nothing from Scopus but present in the local database, then add values
+				for f in fields:
+					# If nothing is present, enrich with UVSQ author database
+					if not item[f]:
+						item[f] = self.AuthDB[key][f]
 		return auths
 
 
 	def getTitles(self, inScopus):
-		"""extract titles from scopus table"""
+		"""
+		Extracts titles from a Scopus table entry.
+
+		Parameters:
+		- inScopus (str): Scopus table entry containing titles.
+
+		Returns:
+		list: List containing one or two titles extracted from the Scopus entry.
+		"""
 		cutTitle = inScopus.split('[')
 		if len(cutTitle) > 1:
 			cutindex = inScopus.index('[')
 			titleOne = inScopus[0: cutindex].rstrip()
-			titleTwo = inScopus[cutindex+1: -1].rstrip()
+			titleTwo = inScopus[cutindex + 1: -1].rstrip()
 		else:
 			titleOne = inScopus
 			titleTwo = ""
 		return [titleOne, titleTwo]
 
 
-
-	def close_files(self): 	
+	def close_files(self):
+		"""
+		Closes open files, such as the CSV output file for system logs.
+		"""
 		self.docs_table.close()
 
-	def prepareData(self, doc, auths, docType):
-		''' structure data has expected by the TEI'''	
-		dataTei = {}
-		dataTei['doctype'] = docType 
 
-		#_______ extract funding data	
-		dataTei['funders'] = []	
-		if doc['Funding Details']: dataTei['funders'].append(doc['Funding Details'])
-		temp = [doc['Funding Text '+str(i)] for i in range(1,10) if doc.get('Funding Text '+str(i))]
+	def prepareData(self, doc, auths, docType):
+		"""
+		Prepares data in the format expected by TEI (Text Encoding Initiative).
+
+		Parameters:
+		- doc (dict): Document information.
+		- auths (list): List of author dictionaries.
+		- docType (str): Type of the document.
+
+		Returns:
+		dict: Data in the TEI format.
+		"""
+		dataTei = {}
+		dataTei['doctype'] = docType
+
+		# Extract funding data
+		dataTei['funders'] = []
+		if doc['Funding Details']:
+			dataTei['funders'].append(doc['Funding Details'])
+		temp = [doc['Funding Text ' + str(i)] for i in range(1, 10) if doc.get('Funding Text ' + str(i))]
 		dataTei['funders'].extend(temp)
 
-
-		#_______ get hal journalId
+		# Get HAL journalId and ISSN
 		dataTei['journalId'], dataTei['issn'] = False, False
-
 		if doc['ISSN']:
-			#si moins de 8 carac on rempli de 0
+			# Format ISSN
 			zeroMissed = 8 - len(doc['ISSN'])
-			issn = ("0"* zeroMissed + doc['ISSN']) if zeroMissed > 0 else doc['ISSN']
-			issn = issn[0:4]+'-'+issn[4:]
+			issn = ("0" * zeroMissed + doc['ISSN']) if zeroMissed > 0 else doc['ISSN']
+			issn = issn[0:4] + '-' + issn[4:]
 
+			# Query HAL to get journalId from ISSN
 			prefix = 'http://api.archives-ouvertes.fr/ref/journal/?'
 			suffix = '&fl=docid,valid_s,label_s'
-			req = requests.get(prefix +'q=issn_s:'+issn+suffix)
+			req = requests.get(prefix + 'q=issn_s:' + issn + suffix)
 			req = req.json()
 			reqIssn = [req['response']['numFound'], req['response']['docs']]
-			
-			# if journals finded get the first journalId
-			if reqIssn[0] > 0 : 
+
+			# If journals found, get the first journalId
+			if reqIssn[0] > 0:
 				dataTei['journalId'] = str(reqIssn[1][0]['docid'])
 
-			## if no journal fouded
-			if reqIssn[0] == 0 : 
+			# If no journal found, store the ISSN
+			if reqIssn[0] == 0:
 				dataTei['issn'] = issn
 
-		#_______ find hal domain
+		# Find HAL domain
 		dataTei['domain'] = 'phys.qphy'
 
-		# with journal issn
-		if dataTei['journalId'] : 
+		# Query HAL with journalId to retrieve domain
+		if dataTei['journalId']:
 			prefix = 'http://api.archives-ouvertes.fr/search/?rows=0'
 			suffix = '&facet=true&facet.field=domainAllCode_s&facet.sort=count&facet.limit=2'
-			req = requests.get( prefix + '&q=journalId_i:'+dataTei['journalId']+suffix )
+			req = requests.get(prefix + '&q=journalId_i:' + dataTei['journalId'] + suffix)
 			try:
 				req = req.json()
-				if req["response"]["numFound"] > 9 : # retrieve domain from journal if there is more than 9 occurences
+				if req["response"]["numFound"] > 9:  # Retrieve domain from journal if there are more than 9 occurrences
 					dataTei['domain'] = req['facet_counts']['facet_fields']['domainAllCode_s'][0]
-			except : 
-				print('\tHAL API not worked for retrieve domain with journal')
+			except:
+				print('\tHAL API did not work for retrieving domain with journal')
 				pass
-			
-		if not dataTei['domain'] : 
+
+		if not dataTei['domain']:
 			dataTei['domain'] = 'sdv'
-			print('\t!! domain non trouve : sdv renseigne par default : verifier la pertinence')
+			print('\t!! Domain not found: Defaulted to "sdv". Please verify its relevance.')
 
-		#_______ Match language
-		scopus_lang = doc['Language of Original Document'].split(";")
-		scopus_lang = scopus_lang[0]
-
-		with open("./data/matchLanguage_scopus2hal.json") as fh : 
+		# Match language
+		scopus_lang = doc['Language of Original Document'].split(";")[0]
+		with open("./data/matchLanguage_scopus2hal.json") as fh:
 			matchlang = json.load(fh)
+			dataTei["language"] = matchlang.get(scopus_lang, "und")
 
-			if not matchlang.get(scopus_lang) : 
-				dataTei["language"] = "und"
-				print("!! language non trouve : *und* a ete indique")
-			else : 
-				dataTei["language"] = matchlang[scopus_lang]
-
-		#_______ Abstract
+		# Extract abstract
 		abstract = doc['Abstract']
-		dataTei['abstract'] = False if abstract.startswith('[No abstr') else abstract[: abstract.find('©')-1]
+		dataTei['abstract'] = False if abstract.startswith('[No abstr') else abstract[: abstract.find('©') - 1]
 
-		#________ extract ISBN
-		if ';' in doc['ISBN'] :
-			# si plusieurs isbn prendre le premier seulement
-			dataTei["isbn"]  =  doc['ISBN'][:doc['ISBN'].index(';')] 
-		else : 
-			dataTei["isbn"] = doc['ISBN'] 
-		
+		# Extract ISBN
+		if ';' in doc['ISBN']:
+			# If multiple ISBNs, take the first one only
+			dataTei["isbn"] = doc['ISBN'][:doc['ISBN'].index(';')]
+		else:
+			dataTei["isbn"] = doc['ISBN']
+
 		return dataTei
 
 
-	def produceTeiTree(self, doc, auths, dataTei, titles) :	
+	def produceTeiTree(self, doc, auths, dataTei, titles):
+		"""
+		Produces a TEI tree based on document information, author data, and TEI data.
+
+		Parameters:
+		- doc (dict): Document information.
+		- auths (list): List of author dictionaries.
+		- dataTei (dict): Data in the TEI format.
+		- titles (list): List of document titles.
+
+		Returns:
+		ElementTree: TEI tree.
+		"""	
 		tree = ET.parse('./data/tei_modele.xml')
 		root = tree.getroot()
 		ET.register_namespace('',"http://www.tei-c.org/ns/1.0")
@@ -584,47 +815,69 @@ class automate_hal:
 		return tree
 
 
-	def exportTei(self, docId, docTei, auths) : 
-		tree = docTei 
+	def exportTei(self, docId, docTei, auths):
+		"""
+		Exports TEI data to an XML file and adds a row with relevant information.
+
+		Parameters:
+		- docId (dict): Document identifier information.
+		- docTei (ElementTree): TEI tree.
+		- auths (list): List of author dictionaries.
+
+		Returns:
+		str: Path to the exported XML file.
+		"""
+		tree = docTei
 		root = tree.getroot()
-		ET.register_namespace('',"http://www.tei-c.org/ns/1.0")
+		ET.register_namespace('', "http://www.tei-c.org/ns/1.0")
 		root.attrib["xmlns:hal"] = "http://hal.archives-ouvertes.fr/"
-		
-		xml_path = './data/outputs/TEI/'+docId['eid']+".xml"
+
+		xml_path = './data/outputs/TEI/' + docId['eid'] + ".xml"
 		tree.write(xml_path,
-		xml_declaration=True,
-		encoding="utf-8", 
-		short_empty_elements=False)
+				xml_declaration=True,
+				encoding="utf-8",
+				short_empty_elements=False)
 
-		
-		emails = [elem["mail"] for elem in auths if elem["mail"] ]
+		emails = [elem["mail"] for elem in auths if elem["mail"]]
 
-		self.addRow(docId, "TEI generated", '', '', '', ", ".join(emails) )
+		self.addRow(docId, "TEI generated", '', '', '', ", ".join(emails))
 
 		return xml_path
 
 
-	def hal_upload(self, filepath):
-		''' script python pour importer des notices via SWORD
-			SWORD HAL documentation : https://api.archives-ouvertes.fr/docs/sword
-		'''
+	def hal_upload(self, docId, filepath):
+		"""
+		Uploads TEI XML file to HAL using SWORD protocol.
+
+		Parameters:
+		- filepath (str): Path to the TEI XML file.
+
+		Returns:
+		None
+		"""
 		url = 'https://api.archives-ouvertes.fr/sword/hal'
 		head = {
-		'Packaging': 'http://purl.org/net/sword-types/AOfr',
-		'Content-Type': 'text/xml',
-		'X-Allow-Completion' :None
+			'Packaging': 'http://purl.org/net/sword-types/AOfr',
+			'Content-Type': 'text/xml',
+			'X-Allow-Completion': None
 		}
-		# si pdf  : Content-Type : application/zip 
+		# If pdf: Content-Type: application/zip
 
 		xmlfh = open(filepath, 'r', encoding='utf-8')
-		xmlcontent = xmlfh.read() #le xml doit être lu, sinon temps d'import très long
+		xmlcontent = xmlfh.read()  # The XML must be read, otherwise import time is very long
 		xmlcontent = xmlcontent.encode('UTF-8')
 
-		if len(xmlcontent) < 10 : 
-			print('file not loaded')
+		if len(xmlcontent) < 10:
+			self.addRow(docId, "HAL upload: Success", '', 'File not loaded', '', '')
 			quit()
 
-		response = requests.post(url, headers = head, data = xmlcontent, auth=(self.hal_user_name, self.hal_pswd))
-		print(response.text)
+		response = requests.post(url, headers=head, data=xmlcontent, auth=(self.hal_user_name, self.hal_pswd))
+		if response.status_code == 202:
+			self.addRow(docId, "HAL upload: Success", '', '', '', '')
+			print("HAL upload: Success")
+		else:
+			self.addRow(docId, "HAL upload: Error", '', response.text, '', '')
+			print("HAL upload: Error")
+			print(response.text)
 
 		xmlfh.close()
