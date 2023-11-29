@@ -6,10 +6,14 @@ if __name__ == "__main__":
     scopus_filename = "./data/inputs/scopus_results.csv"
     perso_data_path = './data/inputs/path_and_perso_data.json'
     author_db_path = './data/inputs/auth_db.csv'
-    rowRange=[0, 10] # For debugging
+    
     # Define the stamps you want to add to the paper.
     stamps = ['LGI-SR', 'CHAIRE-RRSC']
 
+    # For debugging: Only upload the first rowRange records.
+    # Comment this line if you want to upload all the records.
+    rowRange=[0, 10] 
+    
     # Load the scopus dataset.
     auto_hal = automate_hal()    
     auto_hal.loadTables_and_createOutpus(perso_data_path, author_db_path)
@@ -17,9 +21,10 @@ if __name__ == "__main__":
 	
     # Address the record in the scopus dataset one by one.
     for i, doc in enumerate(publication_list):
-        # For debugging: Limit to first rowRange records.
-        if i < min(rowRange) : continue
-        elif i > max(rowRange) : break
+        if 'rowRange' in locals():
+            # For debugging: Limit to first rowRange records.
+            if i < min(rowRange) : continue
+            elif i > max(rowRange) : break
 
         # Get the ids of each paper.
         docId = {'eid': doc['EID'] , 'scopusLink': doc['Link'] , 'doi': doc['DOI']}
