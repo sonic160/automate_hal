@@ -7,6 +7,8 @@ if __name__ == "__main__":
     perso_data_path = './data/inputs/path_and_perso_data.json'
     author_db_path = './data/inputs/auth_db.csv'
     rowRange=[0, 10] # For debugging
+    # Define the stamps you want to add to the paper.
+    stamps = ['LGI-SR', 'CHAIRE-RRSC']
 
     # Load the scopus dataset.
     auto_hal = automate_hal()    
@@ -57,7 +59,7 @@ if __name__ == "__main__":
         # Produce TEI file.
         titles = auto_hal.getTitles(doc['Title'])
         dataTei = auto_hal.prepareData(doc, auths, docId['doctype'])
-        docTei = auto_hal.produceTeiTree(doc, auths, dataTei, titles)
+        docTei = auto_hal.produceTeiTree(doc, auths, dataTei, titles, stamps)
         xml_path = auto_hal.exportTei(docId, docTei, auths)
         auto_hal.hal_upload(docId, xml_path)
 

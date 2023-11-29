@@ -532,7 +532,7 @@ class automate_hal:
 				dataTei['issn'] = issn
 
 		# Find HAL domain
-		dataTei['domain'] = 'phys.qphy'
+		dataTei['domain'] = 'spi' # Default: Engineering / physics
 
 		# Query HAL with journalId to retrieve domain
 		if dataTei['journalId']:
@@ -571,7 +571,7 @@ class automate_hal:
 		return dataTei
 
 
-	def produceTeiTree(self, doc, auths, dataTei, titles):
+	def produceTeiTree(self, doc, auths, dataTei, titles, stamps):
 		"""
 		Produces a TEI tree based on document information, author data, and TEI data.
 
@@ -580,6 +580,7 @@ class automate_hal:
 		- auths (list): List of author dictionaries.
 		- dataTei (dict): Data in the TEI format.
 		- titles (list): List of document titles.
+		- stamps (list): List of document stamps.
 
 		Returns:
 		ElementTree: TEI tree.
@@ -610,15 +611,12 @@ class automate_hal:
 		#___CHANGE seriesStmt
 		eSeriesStmt = root.find(biblFullPath+'/tei:seriesStmt', ns)
 		eSeriesStmt.clear()
-		eSeriesIdno_1 = ET.SubElement(eSeriesStmt, 'idno')
-		eSeriesIdno_1.set('n', 'CHAIRE-RRSC')
-		eSeriesIdno_1.set('type', 'stamp')
-		eSeriesIdno_2 = ET.SubElement(eSeriesStmt, 'idno')
-		eSeriesIdno_2.set('n', 'LGI-SR')
-		eSeriesIdno_2.set('type', 'stamp')
-
-		# eSeriesIdno = root.find(biblFullPath+'/tei:seriesStmt/tei:idno', ns)
-		# eSeriesIdno.set('n', 'LGI-SR')
+		eSeriesIdno_dict = {}
+		for i in range(0, len(stamps)):
+			eSeriesIdno_i = ET.SubElement(eSeriesStmt, 'idno')
+			eSeriesIdno_i.set('type','stamp')
+			eSeriesIdno_i.set('n', stamps[i])
+			eSeriesIdno_dict[stamps[i]] = eSeriesIdno_i
 
 		#___CHANGE  sourceDesc / title
 		eAnalytic = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic', ns)
