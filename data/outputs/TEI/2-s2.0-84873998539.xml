@@ -1,0 +1,53 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TEI xmlns="http://www.tei-c.org/ns/1.0" xmlns:hal="http://hal.archives-ouvertes.fr/">
+     
+    <text>
+        <body>
+            <listBibl>
+                <biblFull>
+                    <titleStmt></titleStmt><seriesStmt><idno n="CHAIRE-RRSC" type="stamp"></idno><idno n="LGI-SR" type="stamp"></idno></seriesStmt><notesStmt>
+                        <note type="commentary"></note>
+                        <note type="audience" n="2"></note>
+                        <note type="popular" n="0"></note>
+                        <note type="peer" n="1"></note>
+                    </notesStmt>
+                    <sourceDesc>
+                        <biblStruct>
+                            <analytic>
+                                <title xml:lang="en">Belief reliability: A new metrics for products' reliability</title><author role="aut"><persName><forename type="first">Zhiguo</forename><surname>Zeng</surname></persName><affiliation ref="#struct-1069389"></affiliation><affiliation ref="#struct-1043712"></affiliation><affiliation ref="#struct-411575"></affiliation><affiliation ref="#struct-419361"></affiliation></author>
+
+							<author role="crp"><persName><forename type="first">M.</forename><surname>Wen</surname></persName><email>wenmeilin@buaa.edu.cn</email></author>
+
+							<author role="aut"><persName><forename type="first">R.</forename><surname>Kang</surname></persName></author>
+
+							</analytic>
+                            <monogr>
+                                
+                                <idno type="halJournalId">13512</idno>
+								<imprint>
+                                    <biblScope unit="issue">1</biblScope>
+                                    <biblScope unit="volume">12</biblScope>
+                                    <biblScope unit="pp">15-27</biblScope>
+                                    <date type="datePub">2013</date>
+                                </imprint>
+                            </monogr>
+                        <idno type="doi">10.1007/s10700-012-9138-5</idno></biblStruct>
+                    </sourceDesc>
+                    <profileDesc>
+                        <langUsage>
+                            <language ident="en"></language>
+                        </langUsage>
+                        <textClass>
+                            <keywords scheme="author">
+                                <term xml:lang="en">Fault tree; Reliability; Uncertainty theory</term>
+                            </keywords>
+                            <classCode scheme="halDomain" n="phys.qphy"></classCode>
+                            <classCode scheme="halTypology" n="ART"></classCode>
+                        </textClass>
+                        <abstract xml:lang="en">Traditional reliability metrics are based on probability measures. However, in engineering practices, failure data are often so scarce that traditional metrics cannot be obtained. Furthermore, in many applications, premises of applying these metrics are violated frequently. Thus, this paper will give some new reliability metrics which can evaluate products' reliability with few failure data. Firstly, the new metrics are defined based on uncertainty theory and then, numerical evaluation methods for them are presented. Furthermore, a numerical algorithm based on the fault tree is developed in order to evaluate systems' reliability in the context of defined metrics. Finally, the proposed metrics and evaluation methods are illustrated with some case studies.</abstract>
+                    </profileDesc>
+                </biblFull>
+            </listBibl>
+        </body>
+    </text>
+</TEI>

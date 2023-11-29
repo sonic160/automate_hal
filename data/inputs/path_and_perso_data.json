@@ -1,0 +1,8 @@
+{
+	"perso_login_halPreprod" : "login compte preprod hal",
+	"perso_mdp_halPreprod" : "mdp compte preprod hal",
+	"perso_login_hal" : "",
+	"perso_mdp_hal" : "",
+	"perso_scopusApikey" : "",
+	"perso_scopusInstToken": false
+}
