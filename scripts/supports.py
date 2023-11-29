@@ -126,7 +126,8 @@ class automate_hal:
 				'mail': False,
 				'corresp': False,
 				'affil': '',
-				'affil_id': ''
+				'affil_id': '',
+				'idHAL': ''
 			})
 
 		return auths
@@ -449,7 +450,7 @@ class automate_hal:
 		for item in auths:
 			key = item['surname'] + ' ' + item['initial']
 			if key in self.AuthDB:
-				fields = ['forename', 'affil_id']  # Exclude email from the local database
+				fields = ['forename', 'affil_id', 'idHAL']  # Exclude email from the local database
 				# If nothing from Scopus but present in the local database, then add values
 				for f in fields:
 					# If nothing is present, enrich with UVSQ author database
@@ -664,13 +665,15 @@ class automate_hal:
 			#if applicable add orcid
 			if aut['orcid'] : 
 				orcid = ET.SubElement(eAuth,'idno', {'type':'https://orcid.org/'})
-				orcid.text = aut['orcid']			
+				orcid.text = aut['orcid']
+			
+			#if applicable add idHAL
+			if aut['idHAL'] : 
+				idHAL = ET.SubElement(eAuth,'idno', {'type':'idhal'})
+				idHAL.text = aut['idHAL']
 
 			#if applicable add structId
-			if aut['affil_id'] : 
-				# eAffiliation = ET.SubElement(eAuth, 'affiliation ')
-				# eAffiliation.set('ref', '#struct-'+str(aut['affil_id']))
-				
+			if aut['affil_id'] : 			
 				# Split the comma-separated ids into a list
 				affil_ids = aut['affil_id'].split(', ')
 

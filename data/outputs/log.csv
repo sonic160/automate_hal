@@ -1,6 +1,7 @@
 eid,doi,doctype,state,treat_info,hal_match,halUris,email_corr_auth
 2-s2.0-85019070199,10.1016/j.ress.2017.05.004,ART,already in hal,,ids match,https://hal.science/hal-01633050,
-2-s2.0-84973562771,10.1016/j.cja.2016.04.004,ART,already in hal,,ids match,https://hal.science/hal-04314055,
+2-s2.0-84973562771,10.1016/j.cja.2016.04.004,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-84973562771,10.1016/j.cja.2016.04.004,ART,HAL upload: Success,,,,
 2-s2.0-84873998539,10.1007/s10700-012-9138-5,ART,TEI generated,,,,wenmeilin@buaa.edu.cn
 2-s2.0-84873998539,10.1007/s10700-012-9138-5,ART,HAL upload: Success,,,,
 2-s2.0-85032888897,10.1016/j.ins.2017.10.050,ART,already in hal,,ids match,https://hal.science/hal-01632274,
