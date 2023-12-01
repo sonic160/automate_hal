@@ -3,3 +3,4 @@ data/inputs/scopus_results.csv
 data/inputs/path_and_perso_data.json
 data/outputs/TEI/
 data/outputs/log.csv
+data/archived/
