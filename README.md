@@ -6,47 +6,10 @@ This repository aims at uploading selected papers from Scopus to HAL automatical
 This repository benefits a lot from the work in the github repository [HAL_imports](https://anvilproject.org/guides/content/creating-links), and we greately appreciate the efforts from the authors.
 
 # Table of contents
-- [How to use](#item-1)
 - [A quick demo](#item-2)
 - [Organization of the repository](#item-3)
 - [Further information](#item-4)
 - [Similar works](#item-5)
-
-# How to use <a id="item-1"></a>
-
-1. Clone the repository or download it as a zip file.
-2. Prepare the input data:
-    - Go to [Scopus](https://www.scopus.com/) and run your search there. Please select "export to csv" in Scopus, and save the results to `data/scopus_results.csv`. Please export all the fields from Scopus.
-    - Prepare the `data/auth_db.csv` file. If you don't have information about the authors in your database, you can skip this step. If you provide information related to affil_id and idHAL in HAL, the papers you uploaded will be linked to the corresponding authors in HAL. 
-    
-        The format of this file should be the following:
-
-        ![](/screenshots/demo_auth_db.png)
-
-        - Notes:
-            - The key used to relate the author to the Scopus result is defined as the last name of the author + Initial of the first name. E.g., Zeng Z.
-            - The affil_id and idHAL will be used to map the author names and affiliations in HAL. You can search them from [aurehal.](https://aurehal.archives-ouvertes.fr/)
-    
-    - Prepare the `data/path_and_perso_data.json` file. This file contains the credentials needed for uploading the papers, including:
-        - "perso_login_hal" : HAL Login
-        - "perso_mdp_hal" : HAL password
-        - "perso_scopusApikey" : Scopus API key. You can create your own API key from [Elsevier Developer Portal](https://dev.elsevier.com/).       
-
-        ![](/screenshots/demo_api_scopus.png)
-
-        - "perso_scopusInstToken": Scopus API Institutional token. This token will allows you to use scopus API outside your institutional ip range (e.g., at home). You can skip this, but then you can only use the script within your instituional ip address. To get this token, you need to send an email to [Eslevier developer support](https://service.elsevier.com/app/contact/supporthub/dataasaservice/) and ask for it.
-        
-
-3. Run `hal_upload_from_scopus.py`. You can edit the stamps you want to give to the papers you uploaded. To do this, you just need to modify the values of stamps. Please inputs the correct stamp name. You can find the stamp names for the collections that you are the administrator. To do so, you need to go to the HAL interface, and click on the "My Collection" button on the top right corner. Then, you can find the stamp name as the following.
-
-![](/screenshots/find_stamp_name.png)
-
-__Please note that the type of stamp should be a list, i.e., even though you have only one stamp, you need to put it like `stamp=['XXX']`.__
-
-4. You can monitor the progress of the uploading process in the terminal. The log is saved in the `data/log.csv` file. For each paper in `scopus_results.csv`, the program will:
-    - Check if this paper already exists in HAL. If yes, the program will skip this paper, and you will see `already in hal` in the log.
-    - If not existed, the program will generate a TEI-xml file for this paper. If succeeded, you will see `TEI generated` in the log.
-    - Then, the TEI-xml file will be uploaded to HAL. If succeeded, you will see `HAL upload: Success` in the log.
 
 # A quick demo <a id="item-2"></a>
 In this section, you will find a step-by-step demo to show you how to use the scripts. Let us assume you already download the codes and install all the necessary dependencies.
@@ -69,12 +32,20 @@ Then, we output the results to `data/inputs/scopus_results.csv`: Please select "
 
 The `data/auth_db.csv` file is used to map each author to his/her full name (rather than initials), affiliations id in HAL, and idHAL in HAL. If you don't have the information about the authors in your database, you can skip this step. Otherwise, you need to provide the information in this file. The first column is the author key, it should match the author name field in the Scopus records. 
 
-__Please note that if an author has different ways of spelling its initials in the Scopus record, you need add multiple entries in this table, each one corresponding to one way of spelling__ An example of auth_db.csv can be found [here.](data/inputs/auth_db.csv)
+The format of this file should be the following:
+
+![](/screenshots/demo_auth_db.png)
+
+- Notes:
+    - The key used to relate the author to the Scopus result is defined as the last name of the author + Initial of the first name. E.g., Zeng Z.
+    - The affil_id and idHAL will be used to map the author names and affiliations in HAL. You can search them from [aurehal.](https://aurehal.archives-ouvertes.fr/)
+
+    - __Please note that if an author has different ways of spelling its initials in the Scopus record, you need add multiple entries in this table, each one corresponding to one way of spelling__ An example of auth_db.csv can be found [here.](data/inputs/auth_db.csv)
 
 
-## Step 3: Prepare the `data/path_and_perso_data.json` file. 
+## Step 3: Prepare the `data/inputs/path_and_perso_data.json` file. 
 
-Provide your HAL user names, passwords, and Scopus API key in this file. The format of this file should be the following:
+You need to __create__ a file called `path_and_perso_data.json` and put it under the `data/inputs/` folder (it is not included in the repository, as it contains personal credential and is included in .gitignore file. __Please always keep this file offline!__). In this file, you should provide your HAL user names, passwords, and Scopus API key in this file. The format of this file should be the following:
 
 ```json
 {
@@ -85,6 +56,12 @@ Provide your HAL user names, passwords, and Scopus API key in this file. The for
 }
 ```
 
+- You can create your own Scopus API key from [Elsevier Developer Portal](https://dev.elsevier.com/).       
+
+![](/screenshots/demo_api_scopus.png)
+
+- "perso_scopusInstToken": Scopus API Institutional token. This token will allows you to use scopus API outside your institutional ip range (e.g., at home). You can skip this, but then you can only use the script within your instituional ip address. To get this token, you need to send an email to [Eslevier developer support](https://service.elsevier.com/app/contact/supporthub/dataasaservice/) and ask for it.
+
 ## Step 4: Change the stamps for the teams.
 
 In this example, we want to upload the papers to HAL with the stamp 'LGI-SR' and 'CHAIRE-RRSC'. So we need to modify the `stamp` variable in the `hal_upload_from_scopus.py` file. 
@@ -94,13 +71,24 @@ You should modify the stamps according to your needs.
 line 11: stamps = ['your_stamp_1']
 ```
 
+You can find the stamp names for the collections that you are the administrator. To do so, you need to go to the HAL interface, and click on the "My Collection" button on the top right corner. Then, you can find the stamp name as the following.
+
+![](/screenshots/find_stamp_name.png)
+
+__Please note that the type of stamp should be a list, i.e., even though you have only one stamp, you need to put it like `stamp=['XXX']`.__
+
 ## Step 5: Run `hal_upload_from_scopus.py`
 
 Finally, we can run the `hal_upload_from_scopus.py` script. If everything goes well, you will see the following output in the terminal:
 
 <img src='screenshots/demo_results.gif' width='500'>
 
-You can check the status of the uploading process in the `data/log.csv` file. Hope everything will be fine with you! Please feel free to contact me in Github if you have any questions.
+You can check the status of the uploading process in the `data/outputs/log.csv` file. For each paper in `scopus_results.csv`, the program will:
+    - Check if this paper already exists in HAL. If yes, the program will skip this paper, and you will see `already in hal` in the log.
+    - If not existed, the program will generate a TEI-xml file for this paper. If succeeded, you will see `TEI generated` in the log.
+    - Then, the TEI-xml file will be uploaded to HAL. If succeeded, you will see `HAL upload: Success` in the log.
+
+Hope everything will be fine with you! Please feel free to contact me in Github if you have any questions.
 
 # Organization of the repository <a id="item-3"></a>
 
