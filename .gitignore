@@ -1,6 +1,6 @@
-data/inputs/auth_db.csv
-data/inputs/scopus_results.csv
+# data/inputs/auth_db.csv
+# data/inputs/scopus_results.csv
 data/inputs/path_and_perso_data.json
 data/outputs/TEI/
-data/outputs/log.csv
+# data/outputs/log.csv
 data/archived/
