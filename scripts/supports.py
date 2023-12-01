@@ -840,11 +840,12 @@ class automate_hal:
 			index4meeting+=1
 
 		# if journal not in hal : paste issn
-		if not dataTei['journalId'] and dataTei["issn"] :
-			eIdIssn = ET.Element('idno', {'type':'issn'})
-			eIdIssn.text = dataTei['issn']
-			eIdIssn.tail = '\n'+'\t'*8
-			eMonogr.insert(0,eIdIssn)
+		if not dataTei['doctype'] == 'COMM':
+			if not dataTei['journalId'] and dataTei["issn"] :
+				eIdIssn = ET.Element('idno', {'type':'issn'})
+				eIdIssn.text = dataTei['issn']
+				eIdIssn.tail = '\n'+'\t'*8
+				eMonogr.insert(0,eIdIssn)
 
 		# if journal not in hal and doctype is ART then paste journal title
 		if not dataTei['journalId'] and dataTei['doctype'] == "ART" : 
