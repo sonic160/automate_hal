@@ -1,0 +1,6 @@
+{
+	"perso_login_hal" : "Replace with your HAL login",
+	"perso_mdp_hal" : "Replace with your HAL Password",
+	"perso_scopusApikey" : "Replace with your Scopus API key",
+	"perso_scopusInstToken": "Replace with your Scopus Institution Token"
+}
