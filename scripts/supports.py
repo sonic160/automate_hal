@@ -266,9 +266,9 @@ class automate_hal:
 		"""
 		# Dictionary mapping Scopus document types to HAL document types
 		doctype_scopus2hal = {
-			'Article': 'ART', 'Article in Press': 'ART', 'Review': 'ART', 'Business Article': 'ART',
-			"Data Paper": "ART", 'Conference Paper': 'COMM',
-			'Conference Review': 'COMM', 'Book': 'OUV', 'Book Chapter': 'COUV'
+			'Article': 'ART', 'Article in press': 'ART', 'Review': 'ART', 'Business article': 'ART',
+			"Data paper": "ART", 'Conference paper': 'COMM',
+			'Conference review': 'COMM', 'Book': 'OUV', 'Book chapter': 'COUV'
 		}
 
 		# Check if the provided Scopus document type is in the mapping
@@ -312,6 +312,10 @@ class automate_hal:
 			Example: [2, ['uri1', 'uri2']]
 		"""
 		idInHal = [0, []]  # Number of items, list of URIs
+
+		# Check if doi is empty:
+		if doi == '':
+			return idInHal
 
 		# Perform a HAL request to find documents by DOI
 		reqId = self.reqHal('doiId_id:', doi)
@@ -509,12 +513,16 @@ class automate_hal:
 		for item in auths:
 			key = item['surname'] + ' ' + item['initial']
 			if key in self.AuthDB:
-				fields = ['forename', 'affil_id', 'idHAL']  # Exclude email from the local database
-				# If nothing from Scopus but present in the local database, then add values
-				for f in fields:
-					# If nothing is present, enrich with UVSQ author database
-					if not item[f]:
-						item[f] = self.AuthDB[key][f]
+				# Use 'forename' to verify the authors.
+				if item['forename'] != self.AuthDB[key]['forename']: # If not matching, do nothing.
+					print(f"!!warning: forename mismatch for {key}: {item['forename']} vs {self.AuthDB[key]['forename']}")
+				else: # If mathing, get the affil_id and idHAL from database.
+					fields = ['affil_id', 'idHAL']
+					# If nothing from Scopus but present in the local database, then add values
+					for f in fields:
+						# If nothing is present, enrich with author database
+						if not item[f]:
+							item[f] = self.AuthDB[key][f]
 		return auths
 
 

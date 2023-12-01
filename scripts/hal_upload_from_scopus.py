@@ -13,7 +13,7 @@ if __name__ == "__main__":
 
     # For debugging: Only upload the first rowRange records.
     # Comment this line if you want to upload all the records.
-    rowRange=[0, 10] 
+    # rowRange=[0, 10] 
     
     # Load the scopus dataset.
     auto_hal = automate_hal()    
