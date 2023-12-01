@@ -8,6 +8,7 @@ if __name__ == "__main__":
     author_db_path = './data/inputs/auth_db.csv'
     
     # Define the stamps you want to add to the paper.
+    # If you don't want to add stamp: stamps = []
     stamps = ['LGI-SR', 'CHAIRE-RRSC']
 
     # For debugging: Only upload the first rowRange records.
@@ -51,7 +52,7 @@ if __name__ == "__main__":
 
         # Extract & enrich authors data
         # from scopus table extract name, initial, authId
-        auths = auto_hal.extractAuthors(doc['Authors'], doc['Author(s) ID'])
+        auths = auto_hal.extractAuthors(doc['Authors'], doc['Author(s) ID'], doc['Author full names'])
         # from scopus table extract corresp auth email
         auths = auto_hal.extractCorrespEmail(auths, doc['Correspondence Address'])
         # from scopus table extract raw affil

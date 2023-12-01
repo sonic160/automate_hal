@@ -67,13 +67,15 @@ class automate_hal:
 		return csv.DictReader(t)
 
 
-	def extractAuthors(self, authors, authId):
+	def extractAuthors(self, authors, authId, authFullName=''):
 		"""
 		Extracts author information from a given list of authors and their corresponding IDs.
 
 		Parameters:
-		- authors (str): A string containing a list of authors separated by commas.
+		- authors (str): A string containing a list of authors separated by semicolons.
 		- authId (str): A string containing author IDs separated by semicolons.
+		- authFullName (str): A string containing a list of authors' full names separated by semicolons.
+		-                     Optional. Default: ''.
 
 		Returns:
 		- list: A list of dictionaries, each containing author information such as surname, initial,
@@ -81,8 +83,8 @@ class automate_hal:
 				affiliation, and affiliation ID.
 		"""
 		# Split the input strings to get lists of authors and author IDs
-		authors_cut = authors.split(',')
-		authId_cut = authId[:-1].split(';')
+		authors_cut = authors.split('; ')
+		authId_cut = authId.split('; ')
 
 		# Check if the number of authors and author IDs match
 		if not len(authors_cut) == len(authId_cut):
@@ -91,7 +93,7 @@ class automate_hal:
 
 		# Initialize an empty list to store author information
 		auths = []
-		
+			
 		# Iterate through each author in the list
 		for auth_idx, auth in enumerate(authors_cut):
 			# Check for special cases where author names are grouped, and skip them
@@ -116,11 +118,28 @@ class automate_hal:
 				print('!! Issue with author name:\t', auth)
 				quit()
 
+			# If authorFullName is provided, get the full name as well:
+			auth_forename = False
+			if authFullName != '':
+				# Find the starting index of the specified author
+				tmp_auth = surname+', '
+				start_index = authFullName.find(tmp_auth)
+				if start_index != -1: # If found author name.
+					# Find the ending index of the substring you want
+					end_index = authFullName.find(' (', start_index)
+					if end_index != -1: # If find the end string.
+						# Extract the desired substring and remove leading comma and trailing space
+						auth_forename = authFullName[start_index + len(tmp_auth):end_index]
+					else:
+						print("Error: Extracting author forename!")
+				else:
+					print("Error: Extracting author forename!")			
+
 			# Append author information to the list
 			auths.append({
 				'surname': surname,
 				'initial': initial,
-				'forename': False,
+				'forename': auth_forename,
 				'scopusId': authId_cut[auth_idx],
 				'orcid': False,
 				'mail': False,
@@ -149,8 +168,8 @@ class automate_hal:
 		for item in auths:
 			# Iterate through each line in the corresponding author addresses
 			for addr in corresp.split('\n'):
-				# Check if the address starts with the author's surname
-				if addr.startswith(item["surname"]):
+				# Check if item is the corresponding author.
+				if addr.startswith(item['initial'] + ' ' + item["surname"]):
 					# Extract email address from the line
 					mail = [elem for elem in addr.split(" ") if "@" in elem]
 					if mail:
@@ -179,19 +198,19 @@ class automate_hal:
 		# Iterate through each author
 		while i <= nbAuth:
 			# Construct the full name of the current author
-			preFullName = auths[i-1]['surname'] + ", " + auths[i-1]['initial']
+			preFullName = auths[i-1]['surname'] + " " + auths[i-1]['initial']
 
 			if i == nbAuth:
 				# If it's the last author, extract affiliation from the current author to the end
 				aff = rawAffils[rawAffils.index(preFullName):]
 			else:
 				# If it's not the last author, construct the full name of the next author
-				postFullName = auths[i]['surname'] + ", " + auths[i]['initial']
+				postFullName = auths[i]['surname'] + " " + auths[i]['initial']
 				# Extract affiliation from the current author to the next author
 				aff = rawAffils[rawAffils.index(preFullName):rawAffils.index(postFullName)]
 
 			# Exclude the author's name from the affiliation
-			nameLen = len(preFullName + ', ')
+			nameLen = len(preFullName + ' ')
 			# Update author information with affiliation
 			auths[i-1]['affil'] = aff[nameLen:]
 			i += 1
@@ -456,10 +475,17 @@ class automate_hal:
 		dict: The JSON response from the Scopus API.
 		"""
 		prefix = "https://api.elsevier.com/content/"
-		req = requests.get(
-			prefix + suffix,
-			headers={'Accept': 'application/json', 'X-ELS-APIKey': self.apikey}
-		)
+		# If no insttoken is provided: Use apikey.
+		if not self.insttoken:
+			req = requests.get(
+				prefix + suffix,
+				headers={'Accept': 'application/json', 'X-ELS-APIKey': self.apikey}
+			)
+		else:
+			req = requests.get(
+				prefix + suffix,
+				headers={'Accept': 'application/json', 'X-ELS-APIKey': self.apikey, 'X-ELS-Insttoken': self.insttoken}
+			)
 		req = req.json()
 
 		# Check for API service errors
