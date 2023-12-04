@@ -472,7 +472,7 @@ class automate_hal:
 		"""
 
 		prefix = 'https://api.archives-ouvertes.fr/ref/'
-		suffix = "&fl=docid&wt=json"
+		suffix = "&fl=docid,label_s&wt=json"
 		req = prefix + ref_name + '/?q=' + value + suffix
 		found = False
 
@@ -691,20 +691,6 @@ class automate_hal:
 		eTitle = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic/tei:title', ns)
 		eAnalytic.remove(eTitle) 
 				
-		# Si pas de 2e titre, le titre est celui du document
-		# if not titles[1] : 
-		#     eTitle = ET.Element('title', {'xml:lang': dataTei["language"] })
-		#     eTitle.text = titles[0]
-		#     eAnalytic.insert(0, eTitle)
-
-		# # Si un 2e titre est présent, le 1er titre est en en le 2nd dans la lang du doc
-		# if titles[1] : 
-		#     eTitle = ET.Element('title', {'xml:lang':'en'})
-		#     eTitle.text = titles[0]
-		#     eAnalytic.insert(0,eTitle)
-		#     eTitle2 = ET.Element('title', {'xml:lang': dataTei["language"] } )
-		#     eTitle2.text = titles[1]
-		#     eAnalytic.insert(1,eTitle2)
 		eTitle = ET.Element('title', {'xml:lang': dataTei["language"] })
 		eTitle.text = title
 		eAnalytic.insert(0, eTitle)
@@ -772,16 +758,26 @@ class automate_hal:
 					# Remove the ';' at the end of the affiliation. 
 					if aut_affil.endswith('; '):
 						aut_affil = aut_affil.rstrip('; ')                   
+					
 					# Search HAL to find the affiliation.
+					affi_exist_in_hal = False
 					search_result = self.reqHalRef(ref_name='structure', value=aut_affil)
-					if search_result[0] > 0: # Existed in HAL.
-						# Set affil_id
-						affil_id =  search_result[1][0]['docid']
-						# Create a new 'affiliation' element under the 'eAuth' element
-						eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-						# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
-						eAffiliation_i.set('ref', '#struct-' + affil_id)
-					else: # Add the affiliation manually.
+					if search_result[0] > 0: # Find affiliation with the same names in HAL.
+						# Check the HAL affiliation contains some other affiliation.
+						for i in range(len(search_result[1])):
+							affli_info = search_result[1][i]
+							if aut_affil.lower() == affli_info['label_s'].lower():								
+								# Set affil_id
+								affil_id =  search_result[1][i]['docid']
+								# Create a new 'affiliation' element under the 'eAuth' element
+								eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
+								# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
+								eAffiliation_i.set('ref', '#struct-' + affil_id)
+								affi_exist_in_hal = True
+								break
+					
+					# If the affiliation does not exist in HAL, add the affiliation manually.
+					if not affi_exist_in_hal: 
 						# If it is the first new affiliation, create directly.
 						if new_affiliation_idx == 0:
 							new_affiliation_idx += 1 # Update the index.
@@ -887,9 +883,9 @@ class automate_hal:
 		eImprint = root.find(biblStructPath+'/tei:monogr/tei:imprint', ns)
 		for e in list(eImprint):
 			if e.get('unit') == 'issue': 
-				if issue: e.text = issue 
+				if issue: e.text = issue if isinstance(issue, str) else str(int(issue))
 			if e.get('unit') == 'volume' : 
-				if volume: e.text = volume
+				if volume: e.text = volume if isinstance(volume, str) else str(int(volume))
 			if e.get('unit') == 'pp' : 
 				if page_range: e.text = page_range
 			if e.tag.endswith('date') : e.text = cover_date
