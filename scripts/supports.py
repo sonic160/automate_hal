@@ -318,7 +318,12 @@ class automate_hal:
 		else: ValueError('Mode value error!')		
 		
 		# Verify if the publication type is supported.
-		if not self.matchDocType(doc['subtypeDescription']):
+		if self.mode == 'search_query':
+			doc_type = doc['subtypeDescription']
+		elif self.mode =='csv':
+			doc_type = doc['Document Type']
+		else: ValueError('Mode value error!')
+		if not self.matchDocType(doc_type):
 			return
 		# Verify if the paper is already in HAL.
 		elif self.verify_if_existed_in_hal(doc):
@@ -504,12 +509,7 @@ class automate_hal:
 
 		# Verify if the publication existed in HAL.
 		# First check by doi:
-		if self.mode == 'search_query':
-			idInHal = self.reqWithIds(self.docid['doi'])
-		elif self.mode == 'csv':
-			idInHal = self.reqWithIds(self.docid['DOI'])
-		else:
-			ValueError("mode value error!")
+		idInHal = self.reqWithIds(self.docid['doi'])
 		
 		if idInHal[0] > 0:
 			print(f"already in HAL")
