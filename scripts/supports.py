@@ -40,7 +40,7 @@ class automate_hal:
     """
 
 
-	def __init__(self, perso_data_path, author_db_path, stamps):
+	def __init__(self, perso_data_path, author_db_path, stamps, mode='search_query'):
 		'''
 		Initialize the automate_hal object with HAL credentials, stamps, and loads valid authors' data.
 
@@ -56,11 +56,16 @@ class automate_hal:
 		self.AuthDB = ''
 		self.docs_table = ''
 		self.writeDoc = ''
+		self.mode = mode
 		self.ite = -1
 		self.stamps = stamps
 		self.docid = ''
 		self.auths = []
 		self.info_complement = {}
+
+		# Check mode:
+		if mode != 'search_query' and mode != 'csv':
+			raise ValueError('mode must be either "search_query" or "csv".')
 
 		# Load the personal credentials and author database.
 		self.loadTables_and_createOutpus(perso_data_path, author_db_path)
@@ -137,7 +142,7 @@ class automate_hal:
 							item[f] = self.AuthDB[key][f]
 		self.auths = auths
 
-	def extractAuthors(self, doc):
+	def extractAuthors(self):
 		"""
 		Extracts author information for the authors in a give paper, and then update the information in self.auths.
 
@@ -149,7 +154,7 @@ class automate_hal:
 		"""      
 
 		# Get details for each paper using AbstractRetrieval API.
-		ab = AbstractRetrieval(doc['eid'], view='FULL')
+		ab = AbstractRetrieval(self.docid['eid'], view='FULL')
 		authors = ab.authorgroup
 
 		# Initialize an empty list to store author information
@@ -306,9 +311,12 @@ class automate_hal:
 		"""
 
 		# Get the ids of each paper.
-		self.docid = {'eid': doc['eid'], 'doi': doc['doi']}
-		# print(f"\nite_{self.ite}\n{self.docid['eid']}")
-
+		if self.mode == 'search_query':
+			self.docid = {'eid': doc['eid'], 'doi': doc['doi']}
+		elif self.mode =='csv':
+			self.docid = {'eid': doc['EID'], 'doi': doc['DOI']}
+		else: ValueError('Mode value error!')		
+		
 		# Verify if the publication type is supported.
 		if not self.matchDocType(doc['subtypeDescription']):
 			return
@@ -317,15 +325,45 @@ class automate_hal:
 			return
 		else:        
 			# Extract & enrich authors data
-			ab = self.extractAuthors(doc)
+			ab = self.extractAuthors()
 			# from auth_db.csv get the author's affiliation structure_id in HAL.
 			self.enrichWithAuthDB()
 			# Complement the paper data based on the Abstract Retrival API.
 			self.complementPaperData(ab)
 			# Prepare the data for outputing TEI-xml.         
 			dataTei = self.prepareData(doc)
-			docTei = self.produceTeiTree(doc, dataTei)
+			
+			# Produce the TEI-xml tree.
+			# Prepare input data for the TEI-xml tree.
+			if self.mode == 'search_query':
+				title = doc['title']
+				pub_name = doc["publicationName"]
+				issue = doc['issueIdentifier'] 
+				volume = doc['volume']
+				page_range = doc['pageRange']
+				cover_date = doc['coverDate']
+				kw_list = doc['authkeywords'].split(" | ")
+			elif self.mode =='csv':
+				title = doc['Title']
+				pub_name = doc["Source title"]
+				issue = doc['Issue'] 
+				volume = doc['Volume']
+				if doc['Page start'] and doc['Page end'] :
+					page_range = doc['Page start']+ "-"+doc['Page end']
+				else : 
+					page_range = ""
+				cover_date = doc['Year']
+				kw_list = doc['Author Keywords'].split(" ; ")
+			else: ValueError('Mode value error!')
+			# Produce the xml tree.							
+			docTei = self.produceTeiTree(dataTei, title=title, pub_name=pub_name,
+								issue=issue, volume=volume, page_range=page_range,
+								cover_date=cover_date, keywords_list=kw_list)
+
+			# Export Tei-xml file.
 			xml_path = self.exportTei(docTei)
+
+			# Upload to HAL.
 			self.hal_upload(xml_path)
 
 
@@ -466,13 +504,24 @@ class automate_hal:
 
 		# Verify if the publication existed in HAL.
 		# First check by doi:
-		idInHal = self.reqWithIds(self.docid['doi'])
+		if self.mode == 'search_query':
+			idInHal = self.reqWithIds(self.docid['doi'])
+		elif self.mode == 'csv':
+			idInHal = self.reqWithIds(self.docid['DOI'])
+		else:
+			ValueError("mode value error!")
+		
 		if idInHal[0] > 0:
 			print(f"already in HAL")
 			self.addRow(self.docid, 'already in hal', '', 'ids match', idInHal[1])
 			return True
 		else: # Then, check with title
-			titleInHal = self.reqWithTitle(doc['title'])
+			if self.mode == 'search_query':
+				titleInHal = self.reqWithTitle(doc['title'])
+			elif self.mode == 'csv':
+				titleInHal = self.reqWithTitle(doc['Title'])
+			else:
+				ValueError("mode value error!")
 			if titleInHal[0] > 0:
 				self.addRow(self.docid, 'already in hal', '', 'ids match', titleInHal[1])
 				return True
@@ -495,21 +544,32 @@ class automate_hal:
 
 		# Extract funding data
 		dataTei['funders'] = []
-		if doc['fund_acr']:
-			if not doc['fund_no']:
-				dataTei['funders'].append(doc['fund_acr'])
-			else:
-				dataTei['funders'].append('Funder: {}, Grant NO: {}'.format(doc['fund_acr'], doc['fund_no']))
+		if self.mode == 'search_query':
+			if doc['fund_acr']:
+				if not doc['fund_no']:
+					dataTei['funders'].append(doc['fund_acr'])
+				else:
+					dataTei['funders'].append('Funder: {}, Grant NO: {}'.format(doc['fund_acr'], doc['fund_no']))
+		elif self.mode =='csv':
+			if doc['Funding Details']:
+				dataTei['funders'].append(doc['Funding Details'])
+		else: ValueError('Mode value error!')
 
 		if self.info_complement['funding_text']:
 			dataTei['funders'].append(self.info_complement['funding_text'])
 
 		# Get HAL journalId and ISSN
 		dataTei['journalId'], dataTei['issn'] = False, False
-		if doc['issn']:
+		if self.mode == 'search_query':
+			doc_issn = doc['issn']
+		elif self.mode =='csv':
+			doc_issn = doc['ISSN']
+		else: ValueError('Mode value error!')
+		
+		if doc_issn:
 			# Format ISSN
-			zeroMissed = 8 - len(doc['issn'])
-			issn = ("0" * zeroMissed + doc['issn']) if zeroMissed > 0 else doc['issn']
+			zeroMissed = 8 - len(doc_issn)
+			issn = ("0" * zeroMissed + doc_issn) if zeroMissed > 0 else doc_issn
 			issn = issn[0:4] + '-' + issn[4:]
 
 			# Query HAL to get journalId from ISSN
@@ -549,13 +609,17 @@ class automate_hal:
 
 		# Match language
 		scopus_lang = self.info_complement['language'].split(";")[0]
-		scopus_lang.capitalize()
 		with open("./data/matchLanguage_scopus2hal.json") as fh:
 			matchlang = json.load(fh)
 			dataTei["language"] = matchlang.get(scopus_lang, "und")
 
 		# Extract abstract
-		abstract = doc['description']
+		if self.mode == 'search_query':
+			abstract = doc['description']
+		elif self.mode =='csv':
+			abstract = doc['Abstract']
+		else: ValueError('Mode value error!')
+
 		dataTei['abstract'] = False if abstract.startswith('[No abstr') else abstract[: abstract.find('©') - 1]
 
 		# Extract ISBN
@@ -571,12 +635,12 @@ class automate_hal:
 		return dataTei
 
 
-	def produceTeiTree(self, doc, dataTei):
+	def produceTeiTree(self, dataTei, title, pub_name, 
+					issue, volume, page_range, cover_date, keywords_list):
 		"""
 		Produces a TEI tree based on document information, author data, and TEI data.
 
 		Parameters:
-		- doc (dict): Document information.
 		- dataTei (dict): Data in the TEI format.
 
 		Returns:
@@ -590,7 +654,6 @@ class automate_hal:
 			stamps = [stamps]
 
 		auths = self.auths
-		titles = doc['title']
 
 		tree = ET.parse('./data/tei_modele.xml')
 		root = tree.getroot()
@@ -613,7 +676,6 @@ class automate_hal:
 		eBiblFull = root.find(biblFullPath, ns)
 		eEdition = root.find(biblFullPath+'/tei:editionStmt', ns)
 		eBiblFull.remove(eEdition)
-
 		#___CHANGE seriesStmt
 		eSeriesStmt = root.find(biblFullPath+'/tei:seriesStmt', ns)
 		eSeriesStmt.clear()
@@ -644,7 +706,7 @@ class automate_hal:
 		#     eTitle2.text = titles[1]
 		#     eAnalytic.insert(1,eTitle2)
 		eTitle = ET.Element('title', {'xml:lang': dataTei["language"] })
-		eTitle.text = titles
+		eTitle.text = title
 		eAnalytic.insert(0, eTitle)
 
 		#___CHANGE  sourceDesc / biblStruct / analytics / authors
@@ -789,7 +851,7 @@ class automate_hal:
 		# if journal not in hal and doctype is ART then paste journal title
 		if not dataTei['journalId'] and dataTei['doctype'] == "ART" : 
 			eTitleJ = ET.Element('title', {'level':'j'})
-			eTitleJ.text =  doc["publicationName"]
+			eTitleJ.text =  pub_name
 			eTitleJ.tail = '\n'+'\t'*8
 			eMonogr.insert(1,eTitleJ)
 			index4meeting+=2
@@ -797,7 +859,7 @@ class automate_hal:
 		# if it is COUV or OUV paste book title
 		if dataTei['doctype'] == "COUV" or dataTei['doctype'] == "OUV" :
 			eTitleOuv = ET.Element('title', {'level':'m'})
-			eTitleOuv.text = doc["publicationName"]
+			eTitleOuv.text = pub_name
 			eTitleOuv.tail = '\n'+'\t'*8
 			eMonogr.insert(1 , eTitleOuv)
 			index4meeting+=2
@@ -821,33 +883,23 @@ class automate_hal:
 			#country
 			eSettlement = ET.SubElement(eMeeting, 'country',{'key':'fr'})
 
-		#___ ADD SourceDesc / bibliStruct / monogr : Editor
-		# if doc['Editors'] : 
-		#     eEditor = ET.Element('editor')
-		#     # eEditor.text = doc['Editors']
-		#     eEditor.text = ''
-		#     eMonogr.insert(index4meeting+1,eEditor)
-		# eEditor = ET.Element('editor')
-		# eEditor.text = ''
-		# eMonogr.insert(index4meeting+1,eEditor)
-
 		#___ CHANGE  sourceDesc / monogr / imprint :  vol, issue, page, pubyear, publisher
 		eImprint = root.find(biblStructPath+'/tei:monogr/tei:imprint', ns)
 		for e in list(eImprint):
 			if e.get('unit') == 'issue': 
-				if doc['issueIdentifier']: e.text = doc['issueIdentifier'] 
+				if issue: e.text = issue 
 			if e.get('unit') == 'volume' : 
-				if doc['volume']: e.text = doc['volume']
+				if volume: e.text = volume
 			if e.get('unit') == 'pp' : 
-				if doc['pageRange']: e.text = doc['pageRange']
-			if e.tag.endswith('date') : e.text = doc['coverDate']
+				if page_range: e.text = page_range
+			if e.tag.endswith('date') : e.text = cover_date
 			if e.tag.endswith('publisher') : e.text = self.info_complement['publisher']
 
 		#_____ADD  sourceDesc / biblStruct : DOI & Pubmed
 		eBiblStruct = root.find(biblStructPath, ns)
-		if doc['doi'] : 
+		if self.docid['doi'] : 
 			eDoi = ET.SubElement(eBiblStruct, 'idno', {'type':'doi'} )
-			eDoi.text = doc['doi']
+			eDoi.text = self.docid['doi']
 
 		#___CHANGE  profileDesc / langUsage / language
 		eLanguage = root.find(biblFullPath+'/tei:profileDesc/tei:langUsage/tei:language', ns)
@@ -857,7 +909,6 @@ class automate_hal:
 		eKeywords = root.find(biblFullPath+'/tei:profileDesc/tei:textClass/tei:keywords', ns)
 		eKeywords.clear()
 		eKeywords.set('scheme', 'author')
-		keywords_list = doc['authkeywords'].split(" | ")
 		for i in range(0, len(keywords_list)):
 			eTerm_i = ET.SubElement(eKeywords, 'term')
 			eTerm_i.set('xml:lang', dataTei['language'])
