@@ -24,10 +24,11 @@ if __name__ == '__main__':
 
     # Address the record in the scopus dataset one by one.
     for i, doc in enumerate(publication_list):
-        if 'rowRange' in locals():
-            # For debugging: Limit to first rowRange records.
-            if i < min(rowRange) : continue
-            elif i > max(rowRange) : break
+        # if 'rowRange' in locals():
+        #     # For debugging: Limit to first rowRange records.
+        #     if i < min(rowRange) : continue
+        #     elif i > max(rowRange) : break
+        
         # Update the iteration index.
         auto_hal.ite = i
         print('{}th iterations: {}'.format(i+1, doc['EID']))

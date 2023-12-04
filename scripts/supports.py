@@ -5,40 +5,67 @@ import xml.etree.ElementTree as ET
 
 class automate_hal:
 	"""
-    A class for automating the generation and upload of TEI XML files to the HAL repository.
+    A class for automatically 
+	- searching documents in Scopus, 
+	- generating the corresponding TEI XML files for HAL, 
+	- and uploading the document reference to the HAL repository.
 
     Attributes:
-    - hal_user_name (str): HAL username for authentication.
-    - hal_pswd (str): HAL password for authentication.
-    - apikey (str): API key for accessing the Scopus API.
-    - insttoken (str): Scopus institution token for API access.
-    - AuthDB (dict): A dictionary storing valid authors' information loaded from a local file.
-    - docs_table (file): A CSV file for logging system activities.
-    - writeDoc (csv.writer): CSV writer for adding rows to the system log.
+    - `hal_user_name` (str): HAL username.
+    - `hal_pswd` (str): HAL password.
+    - `AuthDB` (str): Path to a CSV file containing validated author data.
+    - `docs_table` (str): Path to a CSV file for logging system activities.
+    - `writeDoc` (str): CSV writer for adding rows to the system log.
+    - `mode` (str): Mode of operation, either 'search_query' or 'csv'.
+    - `ite` (int): Index of the current literature.
+    - `stamps` (list): List of stamps to be used in the Tei files.
+    - `docid` (dict): Document ID, in the format `{'eid': (str), 'doi': (str), 'doctype': (str)}`.
+    - `auths` (list): List to store author information. 
+	Each element in the list is a dictionary with the following format: `{'surname': (str),
+					'initial': (str),
+					'forename': (str),
+					'scopusId': (str),
+					'orcid': (list),
+					'mail': (str),
+					'corresp': (str),
+					'affil': (list),
+					'affil_city': (list),
+					'affil_country': (list),
+					'affil_address': (list),
+					'affil_postalcode': (list),
+					'affil_id': (list),
+					'idHAL': (list)}`.
+    - `info_complement` (dict): Dictionary to store additional information. Format: `{'funding': (dict),
+			'funding_text': (str),
+			'language': (str),
+			'isbn': (str),
+			'confname': (str),
+			'confdate': (str),
+			'conflocation': (str),
+			'startingPage': (str),
+			'endingPage': (str),
+			'publisher': (str)
+		}`
+
 
     Methods:
-    - __init__: Initializes the automate_hal object with HAL credentials, Scopus API keys, and loads valid authors' data.
-    - extractCorrespEmail: Extracts corresponding author emails from a list of authors and corresponding addresses.
-    - extractRawAffil: Extracts raw affiliations from a Scopus table and associates them with authors.
-    - loadTables_and_createOutpus: Loads local data and initializes system log files and credentials.
-    - matchDocType: Matches Scopus document types to HAL document types.
-    - addRow: Adds a row to the system log CSV file with information about a document's processing.
-    - reqWithIds: Searches HAL to check if a DOI or PubMed ID is already present in the repository.
-    - reqWithTitle: Searches HAL for a document with a given title.
-    - reqHal: Sends a request to the HAL API and retrieves the number of items found and document details.
-    - retrieveScopusAuths: Retrieves additional author information (forename and ORCID) from the Scopus API.
-    - reqScopus: Sends a request to the Scopus API and returns the JSON response.
-    - enrichWithAuthDB: Completes author data with information from a local file containing valid authors.
-    - getTitles: Extracts titles from a Scopus table.
-    - close_files: Closes open CSV files.
-
-    TEI XML Generation and HAL Upload Methods:
-    - prepareData: Structures data as expected by the TEI format, including funding details, journal information, and more.
-    - produceTeiTree: Generates a TEI XML tree based on the provided document data, authors, and titles.
-    - exportTei: Exports TEI data to an XML file, adds a row to the system log, and returns the XML file path.
-    - hal_upload: Uploads a TEI XML file to the HAL repository using the SWORD protocol.
-    """
-
+    - `__init__(self, perso_data_path, author_db_path, stamps, mode='search_query')`: Initializes the `automate_hal` object with HAL credentials, stamps, and loads valid authors' data.
+    - `loadTables_and_createOutpus(self, perso_data_path, author_db_path)`: Loads personal credentials and author database.
+    - `addRow(self, docId, state, treat_info='', hal_match='', uris='', emails='')`: Adds a row to the CSV log file.
+    - `complementPaperData(self, ab)`: Completes paper data with information from the abstract retrieval API.
+    - `enrichWithAuthDB(self)`: Completes author data with information from the author database provided by the user.
+    - `extractAuthors(self)`: Extracts author information for the authors in a given paper and updates the information in `self.auths`.
+    - `loadBibliography(self, path)`: Loads bibliography data from a CSV file.
+    - `matchDocType(self, doctype)`: Matches Scopus document types to HAL document types and updates `self.docid['doctype']`.
+    - `process_paper_ite(self, doc)`: Main function to process each paper, parse data, generate TEI-X, upload to HAL, and log the process.
+    - `reqWithIds(self, doi)`: Searches in HAL to check if the DOI is already present.
+    - `reqWithTitle(self, titles)`: Searches in HAL to check if a record with the same title exists.
+    - `reqHal(self, field, value="")`: Performs a request to the HAL API based on the specified field and value.
+    - `reqHalRef(self, ref_name, value="")`: Performs a request to the HAL API to get references to some fields.
+    - `verify_if_existed_in_hal(self, doc)`: Verifies if the document is already in HAL.
+    - `prepareData(self, doc)`: Prepares data in the format expected by TEI (Text Encoding Initiative).
+    - `produceTeiTree(self, dataTei, title, pub_name, issue, volume, page_range, cover_date, keywords_list)`: Produces a TEI tree based on document information, author data, and TEI data.
+	"""
 
 	def __init__(self, perso_data_path, author_db_path, stamps, mode='search_query'):
 		'''
@@ -47,21 +74,32 @@ class automate_hal:
 		Parameters:
 		- perso_data_path (path): path to the json file containing the personal data of the authors
 		- author_db_path (path): path to the csv file containing the validated author data
-		- stamps (list): A list of stamps to be used in the Tei files
+		- stamps (list): A list of stamps to be used in the Tei files. Example: ['stamp_1', 'stamp_2']
 
 		Returns: None
 		'''
-		self.hal_user_name = ''
-		self.hal_pswd = ''
-		self.AuthDB = ''
-		self.docs_table = ''
-		self.writeDoc = ''
-		self.mode = mode
-		self.ite = -1
-		self.stamps = stamps
-		self.docid = ''
-		self.auths = []
-		self.info_complement = {}
+		self.hal_user_name = '' # HAL username
+		self.hal_pswd = '' # HAL password
+		self.AuthDB = '' # Path to a csv files that define user data to refine the search results.
+		self.docs_table = '' # Path to a CSV file for logging system activities.
+		self.writeDoc = '' # CSV writer for adding rows to the system log.
+		self.mode = mode # Mode of operation: search_query or csv
+		self.ite = -1 # Index of the current iterature.
+		self.stamps = stamps # List of stamps to be used in the Tei files.
+		self.docid = '' # Document ID: A dictionary in format of {'eid': '', 'doi': '', 'doctype': ''}
+		self.auths = [] # A dictionary to store author information. 
+		self.info_complement = {
+			'funding': None,
+			'funding_text': '',
+			'language': '',
+			'isbn': '',
+			'confname': '',
+			'confdate': '',
+			'conflocation': '',
+			'startingPage': '',
+			'endingPage': '',
+			'publisher': ''
+		} # A dictionary to store additional information about the document.
 
 		# Check mode:
 		if mode != 'search_query' and mode != 'csv':
@@ -101,11 +139,13 @@ class automate_hal:
 		Returns: None. 
 		"""
 
+		# Get conference data and format it according to HAL requirement.
 		if ab.confdate:
 			confdate = "{:04}-{:02d}-{:02d}".format(
 				ab.confdate[0][0], ab.confdate[0][1], ab.confdate[0][2])
 		else:
 			confdate = ''
+		# Output the results:
 		self.info_complement = {
 			'funding': ab.funding,
 			'funding_text': ab.funding_text,
@@ -125,8 +165,14 @@ class automate_hal:
 		Completes author data with information from the author database provided by the user.
 		For each author in the user-defined database, the mail, HAL-id and Affiliation ID in HAL will be used to replace the corresponding fields in 
 		self.auths.
+
+		Parameters: None.
+		Returns: None.
 		"""
+
+		# Get the author list
 		auths = self.auths
+		# Iterate over the authors, and enrich the author data.
 		for item in auths:
 			key = item['surname'] + ' ' + item['initial']
 			if key in self.AuthDB:
@@ -146,8 +192,7 @@ class automate_hal:
 		"""
 		Extracts author information for the authors in a give paper, and then update the information in self.auths.
 
-		Parameters:
-		- doc: A dictionary containing the info of a paper.
+		Parameters: None.
 
 		Returns: 
 		- ab: An object containging the paper details from the Abstract Retrival API.
@@ -268,7 +313,6 @@ class automate_hal:
 	def matchDocType(self, doctype):
 		"""
 		Matches Scopus document types to HAL document types, and update the self.docid['doctype'] dictionary.
-	]
 
 		Parameters:
 		- doctype (str): Scopus document type.
@@ -298,11 +342,11 @@ class automate_hal:
 
 	def process_paper_ite(self, doc):
 		"""
-		Process each paper:
-			- Parse data, get the needed information.
-			- Generate TEI-X
-			- Upload to HAL
-			- Log the process
+		Main function: Process each paper
+		- Parse data, get the needed information.
+		- Generate TEI-X
+		- Upload to HAL
+		- Log the process
 
 		Parameters:
 		- doc: a dictionary of the paper data.
@@ -374,10 +418,10 @@ class automate_hal:
 
 	def reqWithIds(self, doi):
 		"""
-		Searches in HAL to check if the DOI or PUBMEDID is already present.
+		Searches in HAL to check if the DOI is already present.
 
 		Parameters:
-		- doi (str): Document DOI or PUBMEDID.
+		- doi (str): Document DOI.
 
 		Returns:
 		list: List containing the number of items found and a list of HAL URIs.
@@ -473,7 +517,7 @@ class automate_hal:
 
 		Returns:
 		list: List containing the number of items found and a list of HAL documents.
-			Example: [2, [{'docid': 'uri1'}, {'docid': 'uri2'}]]
+			Example: [2, [{'docid': 'docid1', 'label_s': 'Label 1'}, {'docid': 'docid2', 'label_s': 'Label 2}]]
 		"""
 
 		prefix = 'https://api.archives-ouvertes.fr/ref/'
@@ -963,8 +1007,7 @@ class automate_hal:
 		Parameters:
 		- filepath (str): Path to the TEI XML file.
 
-		Returns:
-		None
+		Returns: None
 		"""
 
 		docId = self.docid
