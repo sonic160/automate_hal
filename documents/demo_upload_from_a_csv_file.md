@@ -75,7 +75,7 @@ __Please note that the type of stamp should be a list, i.e., even though you hav
 
 Finally, we can run the `test_upload_from_csv.py` script. If everything goes well, you will see the following output in the terminal:
 
-<img src='screenshots/demo_results.gif' width='500'>
+<img src='screenshots/demo_results.gif' width='1200'>
 
 You can check the status of the uploading process in the `data/outputs/log.csv` file. For each paper in `scopus_results.csv`, the program will:
     - Check if this paper already exists in HAL. If yes, the program will skip this paper, and you will see `already in hal` in the log.
