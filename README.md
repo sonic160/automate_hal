@@ -10,12 +10,12 @@ More specifically, it has two modes of use:
 - [How to use](#item-2)
 - [Organization of the repository](#item-3)
 - [Background knowledge and references](#item-4)
-- [Similar work and why do we need this projec](#item-5)
+- [Similar work and why do we need this project](#item-5)
 - [Credits](#item-6)
 
 # How to use <a id="item-2"></a>
 
-- Clone the repository, or download the source code.
+- Clone the repository or download the source code.
 - Install the necessary dependencies from the terminal: `pip install -r requirements.txt`
 - Prepare your Scopus API key and institution token (optional) if you plan to use the script outside your institutional ip address. For details, refer to [here](documents/demo_search_scopus_from_api_and_upload.md#item-Scopus-api).
 - If you want to use the `search_query` mode, follow the steps defined in `scripts/test_search_query.py`. You can have a step-by-step tutorial [here](documents/demo_search_scopus_from_api_and_upload.md).
