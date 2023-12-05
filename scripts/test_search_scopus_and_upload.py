@@ -22,7 +22,8 @@ if __name__ == '__main__':
 
     # Define the stamps you want to add to the paper.
     # If you don't want to add stamp: stamps = []
-    stamps = ['LGI-SR', 'CHAIRE-RRSC']
+    # stamps = ['LGI-SR', 'CHAIRE-RRSC']
+    stamps = [] # Add your stamps here
 
     # # For debugging: Only upload the first rowRange records.
     # # Comment this line if you want to upload all the records.
