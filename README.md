@@ -97,6 +97,8 @@ Among them, the following tools are particularly relervant to this project:
 - [X2HAL](https://x2hal.inria.fr/): This is a website run by Inria that allows you to upload xml-tei or bibtext files of your reference, and it will create the notice in HAL for you. However, you have to generate xml-tei file by yourself, which is not an easy task. Also, you need to upload the files in this website manually.
 - [OverHAL](https://halur1.univ-rennes1.fr/OverHAL.php): modified version of the CouvertureHAL program, adapted by Olivier Troccaz and Laurent Jonchère (University of Rennes 1). OverHAL allows you to compare HAL and publication lists (WoS, Scopus, Zotero, Pubmed, etc.). Objectives: identify publications missing from HAL, create a TEI file adapted to X2HAL, generate emails requesting post-prints from the corresponding authors. It is very similar to what we want to do, but again it is a web-based service.
 
+## Particular reason for me
+
 There is a common problem for all these existing tools: Altought they are all great, but all the documents are provided in French >_< I know HAL is mainly used in France but I believe there are many foreign researchers working in France but do not yet master well french (like myself). I believe this project could make their life much easier.
 
 # Credits <a id="item-5"></a>
