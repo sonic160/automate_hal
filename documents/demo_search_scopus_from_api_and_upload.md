@@ -49,7 +49,9 @@ You need to __create__ a file called `path_and_perso_data.json` and put it under
 }
 ```
 
-Apart from the HAL credentials, you also need to provide your Scopus API key. The first time you run this script, you will be asked to provide your Scopus API key in the terminal. <a id="item-Scopus-api"> </a>
+<a id="item-Scopus-api"> </a>
+
+Apart from the HAL credentials, you also need to provide your Scopus API key. The first time you run this script, you will be asked to provide your Scopus API key in the terminal. 
 - You can create your own Scopus API key from [Elsevier Developer Portal](https://dev.elsevier.com/).       
 
 ![](screenshots/demo_api_scopus.png)
