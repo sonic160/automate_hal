@@ -17,7 +17,7 @@ More specifically, it has two modes of use:
 
 - Clone the repository, or download the source code.
 - Install the necessary dependencies: `pip install -r requirements.txt`
-- Prepare your Scopus API key and institution token (optional) if you plan to use the script outside your institutional ip address. For details, refer to [here](documents/demo_search_scopus_from_api_and_upload.md#item-3).
+- Prepare your Scopus API key and institution token (optional) if you plan to use the script outside your institutional ip address. For details, refer to [here](documents/demo_search_scopus_from_api_and_upload.md#item-Scopus_api).
 - If you want to use the `search_query` mode, follow the steps defined in `scripts/test_search_query.py`. You can have a step-by-step tutorial [here](documents/demo_search_scopus_from_api_and_upload.md).
 - If you want to use the `csv` mode, follow the steps defined in `scripts/test_csv.py`. You can have a step-by-step tutorial [here](documents/demo_upload_from_a_csv_file.md).
 
