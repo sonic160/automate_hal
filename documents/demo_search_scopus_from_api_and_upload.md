@@ -45,7 +45,7 @@ You need to __create__ a file called `path_and_perso_data.json` and put it under
 ```json
 {
     "perso_login_hal": "your_hal_login",
-    "perso_mdp_hal": "your_hal_password",
+    "perso_mdp_hal": "your_hal_password"
 }
 ```
 
