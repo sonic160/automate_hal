@@ -1,6 +1,7 @@
 from pybliometrics.scopus import AuthorRetrieval, AbstractRetrieval
 import csv, json, requests
 import xml.etree.ElementTree as ET
+import os
 
 
 class automate_hal:
@@ -599,7 +600,7 @@ class automate_hal:
 				dataTei['funders'].append(doc['Funding Details'])
 		else: ValueError('Mode value error!')
 
-		if self.info_complement['funding_text']:
+		if self.info_complement['funding_text'] and isinstance(self.info_complement['funding_text'], str):
 			dataTei['funders'].append(self.info_complement['funding_text'])
 
 		# Get HAL journalId and ISSN
@@ -986,7 +987,13 @@ class automate_hal:
 		ET.register_namespace('', "http://www.tei-c.org/ns/1.0")
 		root.attrib["xmlns:hal"] = "http://hal.archives-ouvertes.fr/"
 
-		xml_path = './data/outputs/TEI/' + docId['eid'] + ".xml"
+		base_path = './data/outputs/TEI/'
+		# Check if the directory exists
+		if not os.path.exists(base_path):
+			# If it doesn't exist, create the directory
+			os.makedirs(base_path)
+		
+		xml_path = base_path + docId['eid'] + ".xml"
 		ET.indent(tree, space="\t", level=0)
 		tree.write(xml_path,
 				xml_declaration=True,

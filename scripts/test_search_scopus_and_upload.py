@@ -46,5 +46,6 @@ if __name__ == '__main__':
         # Process the corresponding paper.
         try:
             auto_hal.process_paper_ite(doc)
-        except:
+        except Exception as error:
             print('Error processing paper: {}. Log saved.'.format(doc['eid']))
+            print('Error is: {}'.format(error))
