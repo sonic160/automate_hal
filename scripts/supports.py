@@ -2,6 +2,7 @@ from pybliometrics.scopus import AuthorRetrieval, AbstractRetrieval
 import csv, json, requests
 import xml.etree.ElementTree as ET
 import os
+import re
 
 
 class automate_hal:
@@ -458,8 +459,11 @@ class automate_hal:
 		"""
 		titleInHal = [0, []]
 
+		titles = re.sub(r'&amp;', ' ', titles)
+		titles = re.sub(r'[^a-zA-Z0-9 ]', '', titles)		
+
 		# Perform a HAL request to find documents by title
-		reqTitle = self.reqHal('title_t:\"', titles + '\"')
+		reqTitle = self.reqHal('title_t:(', titles + ')')
 
 		# Append HAL URIs to the result list
 		for i in reqTitle[1]:
@@ -1045,3 +1049,19 @@ class automate_hal:
 			print(response.text)
 
 		xmlfh.close()
+
+
+def generate_search_query(da_path):
+	'''
+	Generates a search query for the HAL API.
+
+	Parameters:
+	- da_path (str): path to the database.
+
+	Returns:
+	str: Search query.
+
+	'''
+	
+	
+
