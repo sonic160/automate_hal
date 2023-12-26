@@ -327,7 +327,7 @@ class automate_hal:
 			"Data paper": "ART", "Data Paper": "ART",
 			'Conference paper': 'COMM', 'Conference Paper': 'COMM',
 			'Conference review': 'COMM', 'Conference Review': 'COMM',
-			'Book': 'OUV', 'Book chapter': 'COUV', 'Book Chapter': 'COUV'
+			'Book': 'OUV', 'Book chapter': 'COUV', 'Book Chapter': 'COUV', 'Editorial': 'ART'
 		}
 
 		# Check if the provided Scopus document type is in the mapping
@@ -338,7 +338,7 @@ class automate_hal:
 			return True
 		else:
 			# If not supported: Log the error, and return to process the next paper.
-			self.addRow(self.docid, 'not treated', 'doctype not included in HAL: '+doc['subtypeDescription'])
+			self.addRow(self.docid, 'not treated', 'doctype not included in HAL: '+doctype)
 			return False
 		
 
@@ -677,7 +677,10 @@ class automate_hal:
 				# If multiple ISBNs, take the first one only
 				dataTei["isbn"] = self.info_complement['isbn'][:self.info_complement['isbn'].index(';')]
 			else:
-				dataTei["isbn"] = self.info_complement['isbn']
+				if len(self.info_complement['isbn'])>1:
+					dataTei["isbn"] = self.info_complement['isbn'][0]
+				else:
+					dataTei["isbn"] = self.info_complement['isbn']
 		else:
 			dataTei['isbn'] = ''
 
@@ -803,6 +806,8 @@ class automate_hal:
 			else:
 				# Extract the affiliation name from the search results.
 				aut_affils = aut['affil']
+				if aut_affils[0] == None:
+					aut_affils = ['Unknown']
 				for aut_affil in aut_affils:
 					# Remove the ';' at the end of the affiliation. 
 					if aut_affil.endswith('; '):
