@@ -327,7 +327,7 @@ class automate_hal:
 			"Data paper": "ART", "Data Paper": "ART",
 			'Conference paper': 'COMM', 'Conference Paper': 'COMM',
 			'Conference review': 'COMM', 'Conference Review': 'COMM',
-			'Book': 'OUV', 'Book chapter': 'COUV', 'Book Chapter': 'COUV', 'Editorial': 'ART'
+			'Book': 'OUV', 'Book chapter': 'COUV', 'Book Chapter': 'COUV', 'Editorial': 'ART', 'Short Survey': 'ART'
 		}
 
 		# Check if the provided Scopus document type is in the mapping
