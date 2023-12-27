@@ -51,3 +51,4 @@ if __name__ == '__main__':
         except Exception as error:
             print('Error processing paper: {}. Log saved.'.format(doc['eid']))
             print('Error is: {}'.format(error))
+            auto_hal.addRow(docId=auto_hal.docid, state='Error processing paper.', treat_info='Error is: {}'.format(error))

@@ -1,8 +1,7 @@
 from pybliometrics.scopus import AuthorRetrieval, AbstractRetrieval
-import csv, json, requests
+import csv, json, requests, os, re, math
 import xml.etree.ElementTree as ET
-import os
-import re
+import numpy as np
 
 
 class automate_hal:
@@ -338,6 +337,7 @@ class automate_hal:
 			return True
 		else:
 			# If not supported: Log the error, and return to process the next paper.
+			self.docid['doctype'] = 'Unknown'
 			self.addRow(self.docid, 'not treated', 'doctype not included in HAL: '+doctype)
 			return False
 		
@@ -415,7 +415,7 @@ class automate_hal:
 			xml_path = self.exportTei(docTei)
 
 			# Upload to HAL.
-			self.hal_upload(xml_path)
+			# self.hal_upload(xml_path)
 
 
 	def reqWithIds(self, doi):
@@ -615,7 +615,7 @@ class automate_hal:
 			doc_issn = doc['ISSN']
 		else: ValueError('Mode value error!')
 		
-		if doc_issn:
+		if doc_issn and isinstance(doc_issn, str):
 			# Format ISSN
 			zeroMissed = 8 - len(doc_issn)
 			issn = ("0" * zeroMissed + doc_issn) if zeroMissed > 0 else doc_issn
@@ -937,12 +937,22 @@ class automate_hal:
 		eImprint = root.find(biblStructPath+'/tei:monogr/tei:imprint', ns)
 		for e in list(eImprint):
 			if e.get('unit') == 'issue': 
-				if issue: e.text = issue if isinstance(issue, str) else str(int(issue))
+				if issue: 
+					if isinstance(issue, str):
+						e.text = issue 
+					else:
+						if not math.isnan(issue):
+							e.text = str(int(issue))
 			if e.get('unit') == 'volume' : 
-				if volume: e.text = volume if isinstance(volume, str) else str(int(volume))
+				if volume: 
+					if isinstance(volume, str):
+						e.text = volume 
+					else:
+						if not math.isnan(volume):
+							str(int(volume))
 			if e.get('unit') == 'pp' : 
-				if page_range: e.text = page_range
-			if e.tag.endswith('date') : e.text = cover_date
+				if page_range and isinstance(page_range, str): e.text = page_range 
+			if e.tag.endswith('date') and isinstance(cover_date, str): e.text = cover_date
 			if e.tag.endswith('publisher') : e.text = self.info_complement['publisher']
 
 		#_____ADD  sourceDesc / biblStruct : DOI & Pubmed
