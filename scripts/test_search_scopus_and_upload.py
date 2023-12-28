@@ -7,8 +7,8 @@ if __name__ == '__main__':
     # Define search query.
     # search_query = 'AU-ID(55659850100) OR AU-ID(55348807500) OR AU-ID(7102745133) AND PUBYEAR > 2017 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)'
     # search_query = 'AU-ID(55348807500) AND PUBYEAR > 2016 AND PUBYEAR < 2025'
-    # search_query = 'AU-ID(7005289082) AND PUBYEAR > 2017 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)'
-    search_query = 'AU-ID(6602469780) AND PUBYEAR > 2017 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)'
+    search_query = 'AU-ID(7005289082) AND PUBYEAR > 2000  AND PUBYEAR < 2018 AND AFFIL (centralesupelec)' # Enrico Zio
+    # search_query = 'AU-ID(6602469780) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)' # Bernard Yannou
     
     results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
     df_result = pd.DataFrame(results.results)
@@ -29,7 +29,7 @@ if __name__ == '__main__':
 
     # # For debugging: Only upload the first rowRange records.
     # # Comment this line if you want to upload all the records.
-    rowRange=[42, 110]
+    # rowRange=[42, 110]
 
     # Load the scopus dataset.
     auto_hal = automate_hal(perso_data_path, author_db_path, stamps)    
@@ -37,10 +37,10 @@ if __name__ == '__main__':
     # Address the record in the scopus dataset one by one.
     n = len(df_result)
     for i, doc in df_result.iterrows():
-        if 'rowRange' in locals():
-            # For debugging: Limit to first rowRange records.
-            if i < min(rowRange) : continue
-            elif i > max(rowRange) : break
+        # if 'rowRange' in locals():
+        #     # For debugging: Limit to first rowRange records.
+        #     if i < min(rowRange) : continue
+        #     elif i > max(rowRange) : break
         
         # Update the iteration index.
         auto_hal.ite = i

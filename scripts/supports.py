@@ -415,7 +415,7 @@ class automate_hal:
 			xml_path = self.exportTei(docTei)
 
 			# Upload to HAL.
-			# self.hal_upload(xml_path)
+			self.hal_upload(xml_path)
 
 
 	def reqWithIds(self, doi):
@@ -873,13 +873,14 @@ class automate_hal:
 					
 		## ADD SourceDesc / bibliStruct / monogr : isbn
 		eMonogr = root.find(biblStructPath+'/tei:monogr', ns)
-		index4meeting = 0
+		idx_item = 0
 
 		## ne pas coller l'ISBN si c'est un doctype COMM sinon cela créée une erreur (2021-01)
 		if dataTei['isbn']  and not dataTei['doctype'] == 'COMM':  
 			eIsbn = ET.Element('idno', {'type':'isbn'})
 			eIsbn.text = dataTei["isbn"]
-			eMonogr.insert(0, eIsbn)
+			eMonogr.insert(idx_item, eIsbn)
+			idx_item += 1
 
 		## ADD SourceDesc / bibliStruct / monogr : issn
 		# if journal is in Hal
@@ -887,8 +888,8 @@ class automate_hal:
 			eHalJid = ET.Element('idno', {'type':'halJournalId'})
 			eHalJid.text = dataTei['journalId']
 			eHalJid.tail = '\n'+'\t'*8
-			eMonogr.insert(0,eHalJid)
-			index4meeting+=1
+			eMonogr.insert(idx_item, eHalJid)
+			idx_item += 1
 
 		# if journal not in hal : paste issn
 		if not dataTei['doctype'] == 'COMM':
@@ -896,29 +897,30 @@ class automate_hal:
 				eIdIssn = ET.Element('idno', {'type':'issn'})
 				eIdIssn.text = dataTei['issn']
 				eIdIssn.tail = '\n'+'\t'*8
-				eMonogr.insert(0,eIdIssn)
+				eMonogr.insert(idx_item, eIdIssn)
+				idx_item += 1
 
 		# if journal not in hal and doctype is ART then paste journal title
 		if not dataTei['journalId'] and dataTei['doctype'] == "ART" : 
 			eTitleJ = ET.Element('title', {'level':'j'})
 			eTitleJ.text =  pub_name
 			eTitleJ.tail = '\n'+'\t'*8
-			eMonogr.insert(1,eTitleJ)
-			index4meeting+=2
+			eMonogr.insert(idx_item, eTitleJ)
+			idx_item += 1
 
 		# if it is COUV or OUV paste book title
 		if dataTei['doctype'] == "COUV" or dataTei['doctype'] == "OUV" :
 			eTitleOuv = ET.Element('title', {'level':'m'})
 			eTitleOuv.text = pub_name
 			eTitleOuv.tail = '\n'+'\t'*8
-			eMonogr.insert(1 , eTitleOuv)
-			index4meeting+=2
+			eMonogr.insert(idx_item, eTitleOuv)
+			idx_item += 1
 
 		## ADD SourceDesc / bibliStruct / monogr / meeting : meeting
 		if dataTei['doctype'] == 'COMM' : 
 			#conf title
 			eMeeting = ET.Element('meeting')
-			eMonogr.insert(index4meeting,eMeeting)
+			eMonogr.insert(idx_item, eMeeting)
 			eTitle = ET.SubElement(eMeeting, 'title')
 			eTitle.text = self.info_complement['confname']
 					
