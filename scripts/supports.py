@@ -326,7 +326,8 @@ class automate_hal:
 			"Data paper": "ART", "Data Paper": "ART",
 			'Conference paper': 'COMM', 'Conference Paper': 'COMM',
 			'Conference review': 'COMM', 'Conference Review': 'COMM',
-			'Book': 'OUV', 'Book chapter': 'COUV', 'Book Chapter': 'COUV', 'Editorial': 'ART', 'Short Survey': 'ART'
+			'Book': 'OUV', 'Book chapter': 'COUV', 'Book Chapter': 'COUV', 'Editorial': 'ART', 'Short Survey': 'ART',
+			'Journal': 'ART', 'Conference Proceeding': 'COMM', 'Book Series': 'OUV'
 		}
 
 		# Check if the provided Scopus document type is in the mapping
@@ -365,7 +366,7 @@ class automate_hal:
 		
 		# Verify if the publication type is supported.
 		if self.mode == 'search_query':
-			doc_type = doc['subtypeDescription']
+			doc_type = doc['aggregationType']
 		elif self.mode =='csv':
 			doc_type = doc['Document Type']
 		else: ValueError('Mode value error!')
