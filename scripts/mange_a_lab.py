@@ -85,9 +85,9 @@ if __name__ == '__main__':
     lab_db_path = './data/inputs/lab_data.xlsx'
     save_to_path = './data/outputs/scopus_search_results_lgi.csv'
     # Search for this lab.
-    # df_result = search_for_lab(search_query_range, affil_names, lab_db_path, save_to_path)
+    df_result = search_for_lab(search_query_range, affil_names, lab_db_path, save_to_path)
 
-    df_result = pd.read_csv(save_to_path)
+    # df_result = pd.read_csv(save_to_path)
 
     # Define paths for the input data.
     perso_data_path = './data/inputs/path_and_perso_data.json'
@@ -96,7 +96,7 @@ if __name__ == '__main__':
     # Define the stamps you want to add to the paper.
     # If you don't want to add stamp: stamps = []
     # stamps = ['LGI-SR', 'CHAIRE-RRSC']
-    stamps = [] # Add your stamps here
+    stamps = ['LGI'] # Add your stamps here
     # Start processing.
     auto_hal = automate_hal(perso_data_path, author_db_path, stamps)
     
