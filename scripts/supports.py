@@ -2,6 +2,8 @@ from pybliometrics.scopus import AuthorRetrieval, AbstractRetrieval
 import csv, json, requests, os, re, math
 import xml.etree.ElementTree as ET
 import numpy as np
+from pybliometrics.scopus import ScopusSearch
+import pandas as pd
 
 
 class automate_hal:
@@ -497,6 +499,42 @@ class automate_hal:
 		prefix = 'https://api.archives-ouvertes.fr/search/?'
 		suffix = "&fl=uri_s,title_s&wt=json"
 		req = prefix + '&q=' + field + str(value) + suffix
+		found = False
+
+		# Perform the request until a valid JSON response is obtained
+		while not found:
+			req = requests.get(req)
+			try:
+				fromHal = req.json()
+				found = True
+			except:
+				pass
+
+		num = fromHal['response'].get('numFound')
+		docs = fromHal['response'].get('docs', [])
+		return [num, docs]
+	
+
+	def reqHalStamp(self, stamp, start_year, end_year=2099):
+		"""
+		Performs a request to the HAL API to get the results from a group by its stamp.
+
+		Parameters:
+		- stamp (str): The stamp of a group.
+
+		Returns:
+		list: List containing the number of items found and a list of HAL documents.
+		"""
+
+		req = 'https://api.archives-ouvertes.fr/search/index/?q=collCode_s:{}'.format(stamp) + \
+			'+producedDateY_i:[2018+TO+2025]&sort=producedDateY_i%20desc&submit=&docType_s=ART+OR+COMM+OR+POSTER+OR+OUV+OR+COUV+OR+PROCEEDINGS+OR+BLOG+OR+ISSUE+OR+NOTICE+OR+TRAD+OR+PATENT+OR+OTHER+OR+UNDEFINED+OR+REPORT+OR+THESE+OR+HDR+OR+LECTURE+OR+VIDEO+OR+SON+OR+IMG+OR+MAP+OR+SOFTWARE&submitType_s=notice+OR+file+OR+annex&rows=3000'
+
+		prefix = 'https://api.archives-ouvertes.fr/search/?'
+		prefix_produceDate = '+producedDateY_i:[{}+TO+{}]'.format(start_year, end_year)
+		prefix_sort = '&sort=producedDateY_i%20desc'
+		prefix_type = '&docType_s=ART+OR+COMM+OR+POSTER+OR+OUV+OR+COUV+OR+PROCEEDINGS+OR+BLOG+OR+ISSUE+OR+NOTICE+OR+TRAD+OR+PATENT+OR+OTHER+OR+UNDEFINED+OR+REPORT+OR+THESE+OR+HDR+OR+LECTURE+OR+VIDEO+OR+SON+OR+IMG+OR+MAP+OR+SOFTWARE&submitType_s=notice+OR+file+OR+annex&rows=3000'
+		suffix = "&fl=docid, uri_s,title_s&wt=json"
+		req = prefix + 'q=collCode_s:' + str(stamp) + prefix_produceDate + prefix_produceDate + prefix_sort + prefix_type + suffix
 		found = False
 
 		# Perform the request until a valid JSON response is obtained
@@ -1080,6 +1118,76 @@ def generate_search_query(da_path):
 	str: Search query.
 
 	'''
-	
+
+
+def search_for_lab(search_query_range, affil_names, lab_db_path, save_to_path):
+    '''
+    Search for all the publications from a given lab, and in a given time range.
+
+    Parameters:
+    - search_query_range: string
+        The search query range.
+    - affil_names: list of strings
+        The list of affiliation names.
+    - lab_db_path: string
+        The path to the lab database.
+
+    Returns:
+    - df_result: A dataframe of the results.
+    '''
+
+    search_query_affil = '('
+    for affil_name in affil_names[:-2]:
+        search_query_affil += 'AFFIL ({}) OR '.format(affil_name)
+    search_query_affil += 'AFFIL ({}))'.format(affil_names[-1])
+
+    lab_data = pd.read_excel(lab_db_path)
+    search_query_author = '( '
+    for index, row in lab_data.iterrows():
+        if not np.isnan(row['Scopus id']):
+            search_query_author += 'AU-ID({}) OR '.format(int(row['Scopus id']))
+        else:
+            search_query_author += '(AUTHLASTNAME({}) AND AUTHFIRST({})) OR '.format(row['Family name'], row['First name'][0])
+    search_query_author = search_query_author[:-4]
+    search_query_author += ')'
+
+    search_query = search_query_range +' AND '+ search_query_affil +' AND '+ search_query_author
+    
+    results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
+    df_result = pd.DataFrame(results.results)
+    df_result.to_csv(save_to_path, index=False)
+
+    df_result.fillna(value='', inplace=True)
+    
+    return df_result
+
+
+def check_hal_availability(df_result, save_to_path, auto_hal):
+    # Iterate for all the papers and check if they are in HAL.
+    for i, doc in df_result.iterrows():
+        # Update the iteration index.
+        auto_hal.ite = i
+        print('{}/{} iterations: {}'.format(i+1, len(df_result), doc['eid']))
+        # Process the corresponding paper.
+        idInHal = auto_hal.reqWithIds(doc['doi'])
+        if idInHal[0] > 0:
+            print(f"already in HAL")
+            df_result.loc[i, 'status'] = 'Already existed in HAL'
+        else:
+            try:
+                titleInHal = auto_hal.reqWithTitle(doc['title'])
+            except:
+                df_result.loc[i, 'status'] = 'Error using auto_hal.reqWithTitle!'
+                continue
+
+            if titleInHal[0] > 0:
+                print(f"already in HAL")
+                df_result.loc[i, 'status'] = 'Already existed in HAL'
+            else:
+                print(f"Not existed in HAL")
+                df_result.loc[i, 'status'] = 'Not existed in HAL'
+    
+    # Save the results.
+    df_result.to_csv(save_to_path, index=False)
 	
 
