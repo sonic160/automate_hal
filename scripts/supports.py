@@ -103,6 +103,8 @@ class automate_hal:
 			'endingPage': '',
 			'publisher': ''
 		} # A dictionary to store additional information about the document.
+		self.debug_mode = False # Whether to run in debug mode. If True, not verifying if existed in HAL.
+		self.upload_to_hal = True # Whether to upload the document reference to the HAL repository.
 
 		# Check mode:
 		if mode != 'search_query' and mode != 'csv':
@@ -375,8 +377,9 @@ class automate_hal:
 		if not self.matchDocType(doc_type):
 			return
 		# Verify if the paper is already in HAL.
-		elif self.verify_if_existed_in_hal(doc):
-			return
+		elif not self.debug_mode:
+			if self.verify_if_existed_in_hal(doc):
+				return			
 		else:        
 			# Extract & enrich authors data
 			ab = self.extractAuthors()
@@ -418,7 +421,8 @@ class automate_hal:
 			xml_path = self.exportTei(docTei)
 
 			# Upload to HAL.
-			self.hal_upload(xml_path)
+			if self.upload_to_hal:
+				self.hal_upload(xml_path)
 
 
 	def reqWithIds(self, doi):
@@ -751,280 +755,310 @@ class automate_hal:
 		ET.register_namespace('',"http://www.tei-c.org/ns/1.0")
 		ns = {'tei':'http://www.tei-c.org/ns/1.0'}
 		biblFullPath = 'tei:text/tei:body/tei:listBibl/tei:biblFull'
-
-		#___CHANGE titlesStmt : suppr and add funder	
-		#clear titlesStmt elements ( boz redundant info)
-		eTitleStmt = root.find(biblFullPath+'/tei:titleStmt', ns)
-		eTitleStmt.clear()
-
-		# if applicable add funders	
-		if len(dataTei['funders']) > 0 : 
-			for fund in dataTei['funders']: 
-				eFunder = ET.SubElement(eTitleStmt, 'funder')
-				eFunder.text = fund.replace('\n', ' ').replace('\r', ' ')
-
-		#___CHANGE editionStmt : suppr
-		eBiblFull = root.find(biblFullPath, ns)
-		eEdition = root.find(biblFullPath+'/tei:editionStmt', ns)
-		eBiblFull.remove(eEdition)
-		#___CHANGE seriesStmt
-		eSeriesStmt = root.find(biblFullPath+'/tei:seriesStmt', ns)
-		eSeriesStmt.clear()
-		eSeriesIdno_dict = {}
-		for i in range(0, len(stamps)):
-			eSeriesIdno_i = ET.SubElement(eSeriesStmt, 'idno')
-			eSeriesIdno_i.set('type','stamp')
-			eSeriesIdno_i.set('n', stamps[i])
-			eSeriesIdno_dict[stamps[i]] = eSeriesIdno_i
-
-		#___CHANGE  sourceDesc / title
-		eAnalytic = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic', ns)
-		eTitle = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic/tei:title', ns)
-		eAnalytic.remove(eTitle) 
-				
-		eTitle = ET.Element('title', {'xml:lang': dataTei["language"] })
-		eTitle.text = title
-		eAnalytic.insert(0, eTitle)
-
-		#___CHANGE  sourceDesc / biblStruct / analytics / authors
 		biblStructPath = biblFullPath+'/tei:sourceDesc/tei:biblStruct'
-		author = root.find(biblStructPath+'/tei:analytic/tei:author', ns)
-		eAnalytic.remove(author)
 
-		# Locate the back section of the xml file.
-		eListOrg = root.find('tei:text/tei:back/tei:listOrg', ns)
-		eOrg = root.find('tei:text/tei:back/tei:listOrg/tei:org', ns)
-		eListOrg.remove(eOrg)
 
-		# Reset new affiliation index and list.
-		new_affiliation_idx = 0
-		new_affliation = []
+		# Define private sub-function to parse differet part of the xml tree.
+		def parse_funder():
+			''' Parse funder element. 
+			'''
+			#___CHANGE titlesStmt : suppr and add funder	
+			#clear titlesStmt elements ( boz redundant info)
+			eTitleStmt = root.find(biblFullPath+'/tei:titleStmt', ns)
+			eTitleStmt.clear()
 
-		# For each author, write author information to the xml tree.
-		for aut in auths : 
-			role  = 'aut' if not aut['corresp'] else 'crp' #correspond ou non
-			eAuth = ET.SubElement(eAnalytic, 'author', {'role':role}) 
-			ePers = ET.SubElement(eAuth, 'persName')
+			# if applicable add funders	
+			if len(dataTei['funders']) > 0 : 
+				for fund in dataTei['funders']: 
+					eFunder = ET.SubElement(eTitleStmt, 'funder')
+					eFunder.text = fund.replace('\n', ' ').replace('\r', ' ')
 
-			eForename = ET.SubElement(ePers, 'forename', {'type':"first"})
-			if not aut['forename'] : eForename.text = aut['initial']
-			else : eForename.text = aut['forename']
 
-			eSurname = ET.SubElement(ePers, 'surname')
-			eSurname.text = aut['surname']	
+		def parse_stamp():
+			''' Parse stamp element.
+			'''
+			#___CHANGE editionStmt : suppr
+			eBiblFull = root.find(biblFullPath, ns)
+			eEdition = root.find(biblFullPath+'/tei:editionStmt', ns)
+			eBiblFull.remove(eEdition)
+			#___CHANGE seriesStmt
+			eSeriesStmt = root.find(biblFullPath+'/tei:seriesStmt', ns)
+			eSeriesStmt.clear()
+			eSeriesIdno_dict = {}
+			for i in range(0, len(stamps)):
+				eSeriesIdno_i = ET.SubElement(eSeriesStmt, 'idno')
+				eSeriesIdno_i.set('type','stamp')
+				eSeriesIdno_i.set('n', stamps[i])
+				eSeriesIdno_dict[stamps[i]] = eSeriesIdno_i
 
-			#if applicable  add email 
-			if aut['mail'] :
-				eMail = ET.SubElement(eAuth, 'email')
-				eMail.text = aut['mail'] 
 
-			#if applicable add orcid
-			if aut['orcid'] : 
-				orcid = ET.SubElement(eAuth,'idno', {'type':'https://orcid.org/'})
-				orcid.text = aut['orcid']
-			
-			#if applicable add idHAL
-			if aut['idHAL'] : 
-				idHAL = ET.SubElement(eAuth,'idno', {'type':'idhal'})
-				idHAL.text = aut['idHAL']
-
-			# Handling the affiliations.
-			# if affili_id is provided in authDB: Use them directly.
-			if aut['affil_id']:
-				affil_ids = aut['affil_id'].split(', ') 			
-				# Dictionary to store eAffiliation elements
-				eAffiliation_dict = {}
-				# Create an 'affiliation' element for each id
-				for affil_id in affil_ids:
-					# Create a new 'affiliation' element under the 'eAuth' element
-					eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-					# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
-					eAffiliation_i.set('ref', '#struct-' + affil_id)
-					# Store the 'eAffiliation_i' element in the dictionary with the current id as the key
-					eAffiliation_dict[affil_id] = eAffiliation_i
-			else:
-				# Extract the affiliation name from the search results.
-				aut_affils = aut['affil']
-				if aut_affils[0] == None:
-					aut_affils = ['Unknown']
-				for aut_affil in aut_affils:
-					# Remove the ';' at the end of the affiliation. 
-					if aut_affil.endswith('; '):
-						aut_affil = aut_affil.rstrip('; ')                   
+		def parse_title():
+			''' Parse title element.
+			'''
+			#___CHANGE  sourceDesc / title
+			eAnalytic = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic', ns)
+			eTitle = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic/tei:title', ns)
+			eAnalytic.remove(eTitle) 
 					
-					# Search HAL to find the affiliation.
-					affi_exist_in_hal = False
-					search_result = self.reqHalRef(ref_name='structure', value=aut_affil)
-					if search_result[0] > 0: # Find affiliation with the same names in HAL.
-						# Check the HAL affiliation contains some other affiliation.
-						for i in range(len(search_result[1])):
-							affli_info = search_result[1][i]
-							if aut_affil.lower() == affli_info['label_s'].lower():								
-								# Set affil_id
-								affil_id =  search_result[1][i]['docid']
-								# Create a new 'affiliation' element under the 'eAuth' element
-								eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-								# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
-								eAffiliation_i.set('ref', '#struct-' + affil_id)
-								affi_exist_in_hal = True
-								break
-					
-					# If the affiliation does not exist in HAL, add the affiliation manually.
-					if not affi_exist_in_hal: 
-						# If it is the first new affiliation, create directly.
-						if new_affiliation_idx == 0:
-							new_affiliation_idx += 1 # Update the index.
-							# Create the new organization.
-							eBackOrg_i = ET.SubElement(eListOrg, 'org')
-							eBackOrg_i.set('type', 'institution')
-							eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
-							eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
-							eBackOrg_i_name.text = aut_affil
-							new_affliation.append(aut_affil)
-							# Make reference to the created affliation.
-							eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-							eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
-						else: # If it is not the first new affiliation, search if it has been created by us before.
-							try:
-								idx = new_affliation.index(aut_affil)
-								# If it has been created, make reference to it.
-								eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-								eAffiliation_manual.set('ref', 'localStruct-' + str(idx+1))	
-							except ValueError: # If not created, create a new one.
-								# Update the index.
-								new_affiliation_idx += 1
+			eTitle = ET.Element('title', {'xml:lang': dataTei["language"] })
+			eTitle.text = title
+			eAnalytic.insert(0, eTitle)
+
+
+		def parse_authors():
+			''' Parse authors element.
+			'''
+			eAnalytic = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic', ns)
+			#___CHANGE  sourceDesc / biblStruct / analytics / authors			
+			author = root.find(biblStructPath+'/tei:analytic/tei:author', ns)
+			eAnalytic.remove(author)
+
+			# Locate the back section of the xml file.
+			eListOrg = root.find('tei:text/tei:back/tei:listOrg', ns)
+			eOrg = root.find('tei:text/tei:back/tei:listOrg/tei:org', ns)
+			eListOrg.remove(eOrg)
+
+			# Reset new affiliation index and list.
+			new_affiliation_idx = 0
+			new_affliation = []
+
+			# For each author, write author information to the xml tree.
+			for aut in auths : 
+				role  = 'aut' if not aut['corresp'] else 'crp' #correspond ou non
+				eAuth = ET.SubElement(eAnalytic, 'author', {'role':role}) 
+				ePers = ET.SubElement(eAuth, 'persName')
+
+				eForename = ET.SubElement(ePers, 'forename', {'type':"first"})
+				if not aut['forename'] : eForename.text = aut['initial']
+				else : eForename.text = aut['forename']
+
+				eSurname = ET.SubElement(ePers, 'surname')
+				eSurname.text = aut['surname']	
+
+				#if applicable  add email 
+				if aut['mail'] :
+					eMail = ET.SubElement(eAuth, 'email')
+					eMail.text = aut['mail'] 
+
+				#if applicable add orcid
+				if aut['orcid'] : 
+					orcid = ET.SubElement(eAuth,'idno', {'type':'https://orcid.org/'})
+					orcid.text = aut['orcid']
+				
+				#if applicable add idHAL
+				if aut['idHAL'] : 
+					idHAL = ET.SubElement(eAuth,'idno', {'type':'idhal'})
+					idHAL.text = aut['idHAL']
+
+				# Handling the affiliations.
+				# if affili_id is provided in authDB: Use them directly.
+				if aut['affil_id']:
+					affil_ids = aut['affil_id'].split(', ') 			
+					# Dictionary to store eAffiliation elements
+					eAffiliation_dict = {}
+					# Create an 'affiliation' element for each id
+					for affil_id in affil_ids:
+						# Create a new 'affiliation' element under the 'eAuth' element
+						eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
+						# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
+						eAffiliation_i.set('ref', '#struct-' + affil_id)
+						# Store the 'eAffiliation_i' element in the dictionary with the current id as the key
+						eAffiliation_dict[affil_id] = eAffiliation_i
+				else:
+					# Extract the affiliation name from the search results.
+					aut_affils = aut['affil']
+					if aut_affils[0] == None:
+						aut_affils = ['Unknown']
+					for aut_affil in aut_affils:
+						# Remove the ';' at the end of the affiliation. 
+						if aut_affil.endswith('; '):
+							aut_affil = aut_affil.rstrip('; ')                   
+						
+						# Search HAL to find the affiliation.
+						affi_exist_in_hal = False
+						search_result = self.reqHalRef(ref_name='structure', value=aut_affil)
+						if search_result[0] > 0: # Find affiliation with the same names in HAL.
+							# Check the HAL affiliation contains some other affiliation.
+							for i in range(len(search_result[1])):
+								affli_info = search_result[1][i]
+								if aut_affil.lower() == affli_info['label_s'].lower():								
+									# Set affil_id
+									affil_id =  search_result[1][i]['docid']
+									# Create a new 'affiliation' element under the 'eAuth' element
+									eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
+									# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
+									eAffiliation_i.set('ref', '#struct-' + affil_id)
+									affi_exist_in_hal = True
+									break
+						
+						# If the affiliation does not exist in HAL, add the affiliation manually.
+						if not affi_exist_in_hal: 
+							# If it is the first new affiliation, create directly.
+							if new_affiliation_idx == 0:
+								new_affiliation_idx += 1 # Update the index.
 								# Create the new organization.
 								eBackOrg_i = ET.SubElement(eListOrg, 'org')
 								eBackOrg_i.set('type', 'institution')
 								eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
 								eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
 								eBackOrg_i_name.text = aut_affil
-								new_affliation.append(aut_affil)	
+								new_affliation.append(aut_affil)
 								# Make reference to the created affliation.
 								eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
 								eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+							else: # If it is not the first new affiliation, search if it has been created by us before.
+								try:
+									idx = new_affliation.index(aut_affil)
+									# If it has been created, make reference to it.
+									eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+									eAffiliation_manual.set('ref', 'localStruct-' + str(idx+1))	
+								except ValueError: # If not created, create a new one.
+									# Update the index.
+									new_affiliation_idx += 1
+									# Create the new organization.
+									eBackOrg_i = ET.SubElement(eListOrg, 'org')
+									eBackOrg_i.set('type', 'institution')
+									eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
+									eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
+									eBackOrg_i_name.text = aut_affil
+									new_affliation.append(aut_affil)	
+									# Make reference to the created affliation.
+									eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+									eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
 
-		# In the end, if no new affiliations are added, remove the 'eBack' element.
-		if new_affiliation_idx == 0:
-			eBack_Parent = root.find('tei:text', ns)
-			eBack = root.find('tei:text/tei:back', ns)
-			eBack_Parent.remove(eBack)						
-					
-		## ADD SourceDesc / bibliStruct / monogr : isbn
-		eMonogr = root.find(biblStructPath+'/tei:monogr', ns)
-		idx_item = 0
+			# In the end, if no new affiliations are added, remove the 'eBack' element.
+			if new_affiliation_idx == 0:
+				eBack_Parent = root.find('tei:text', ns)
+				eBack = root.find('tei:text/tei:back', ns)
+				eBack_Parent.remove(eBack)
 
-		## ne pas coller l'ISBN si c'est un doctype COMM sinon cela créée une erreur (2021-01)
-		if dataTei['isbn']  and not dataTei['doctype'] == 'COMM':  
-			eIsbn = ET.Element('idno', {'type':'isbn'})
-			eIsbn.text = dataTei["isbn"]
-			eMonogr.insert(idx_item, eIsbn)
-			idx_item += 1
+		
+		def parse_bib_info():
+			''' Parse bib info like journal, page, keywords, etc.
+			'''
+			## ADD SourceDesc / bibliStruct / monogr : isbn
+			eMonogr = root.find(biblStructPath+'/tei:monogr', ns)
+			idx_item = 0
 
-		## ADD SourceDesc / bibliStruct / monogr : issn
-		# if journal is in Hal
-		if dataTei['journalId'] :
-			eHalJid = ET.Element('idno', {'type':'halJournalId'})
-			eHalJid.text = dataTei['journalId']
-			eHalJid.tail = '\n'+'\t'*8
-			eMonogr.insert(idx_item, eHalJid)
-			idx_item += 1
-
-		# if journal not in hal : paste issn
-		if not dataTei['doctype'] == 'COMM':
-			if not dataTei['journalId'] and dataTei["issn"] :
-				eIdIssn = ET.Element('idno', {'type':'issn'})
-				eIdIssn.text = dataTei['issn']
-				eIdIssn.tail = '\n'+'\t'*8
-				eMonogr.insert(idx_item, eIdIssn)
+			## ne pas coller l'ISBN si c'est un doctype COMM sinon cela créée une erreur (2021-01)
+			if dataTei['isbn']  and not dataTei['doctype'] == 'COMM':  
+				eIsbn = ET.Element('idno', {'type':'isbn'})
+				eIsbn.text = dataTei["isbn"]
+				eMonogr.insert(idx_item, eIsbn)
 				idx_item += 1
 
-		# if journal not in hal and doctype is ART then paste journal title
-		if not dataTei['journalId'] and dataTei['doctype'] == "ART" : 
-			eTitleJ = ET.Element('title', {'level':'j'})
-			eTitleJ.text =  pub_name
-			eTitleJ.tail = '\n'+'\t'*8
-			eMonogr.insert(idx_item, eTitleJ)
-			idx_item += 1
+			## ADD SourceDesc / bibliStruct / monogr : issn
+			# if journal is in Hal
+			if dataTei['journalId'] :
+				eHalJid = ET.Element('idno', {'type':'halJournalId'})
+				eHalJid.text = dataTei['journalId']
+				eHalJid.tail = '\n'+'\t'*8
+				eMonogr.insert(idx_item, eHalJid)
+				idx_item += 1
 
-		# if it is COUV or OUV paste book title
-		if dataTei['doctype'] == "COUV" or dataTei['doctype'] == "OUV" :
-			eTitleOuv = ET.Element('title', {'level':'m'})
-			eTitleOuv.text = pub_name
-			eTitleOuv.tail = '\n'+'\t'*8
-			eMonogr.insert(idx_item, eTitleOuv)
-			idx_item += 1
+			# if journal not in hal : paste issn
+			if not dataTei['doctype'] == 'COMM':
+				if not dataTei['journalId'] and dataTei["issn"] :
+					eIdIssn = ET.Element('idno', {'type':'issn'})
+					eIdIssn.text = dataTei['issn']
+					eIdIssn.tail = '\n'+'\t'*8
+					eMonogr.insert(idx_item, eIdIssn)
+					idx_item += 1
 
-		## ADD SourceDesc / bibliStruct / monogr / meeting : meeting
-		if dataTei['doctype'] == 'COMM' : 
-			#conf title
-			eMeeting = ET.Element('meeting')
-			eMonogr.insert(idx_item, eMeeting)
-			eTitle = ET.SubElement(eMeeting, 'title')
-			eTitle.text = self.info_complement['confname']
-					
-			#meeting date
-			eDate = ET.SubElement(eMeeting, 'date', {'type':'start'}) 
-			eDate.text = self.info_complement['confdate']
-					
-			#settlement
-			eSettlement = ET.SubElement(eMeeting, 'settlement')
-			eSettlement.text = self.info_complement['conflocation'] if self.info_complement['conflocation'] else 'unknown'
+			# if journal not in hal and doctype is ART then paste journal title
+			if not dataTei['journalId'] and dataTei['doctype'] == "ART" : 
+				eTitleJ = ET.Element('title', {'level':'j'})
+				eTitleJ.text =  pub_name
+				eTitleJ.tail = '\n'+'\t'*8
+				eMonogr.insert(idx_item, eTitleJ)
+				idx_item += 1
 
-			#country
-			eSettlement = ET.SubElement(eMeeting, 'country',{'key':'fr'})
+			# if it is COUV or OUV paste book title
+			if dataTei['doctype'] == "COUV" or dataTei['doctype'] == "OUV" :
+				eTitleOuv = ET.Element('title', {'level':'m'})
+				eTitleOuv.text = pub_name
+				eTitleOuv.tail = '\n'+'\t'*8
+				eMonogr.insert(idx_item, eTitleOuv)
+				idx_item += 1
 
-		#___ CHANGE  sourceDesc / monogr / imprint :  vol, issue, page, pubyear, publisher
-		eImprint = root.find(biblStructPath+'/tei:monogr/tei:imprint', ns)
-		for e in list(eImprint):
-			if e.get('unit') == 'issue': 
-				if issue: 
-					if isinstance(issue, str):
-						e.text = issue 
-					else:
-						if not math.isnan(issue):
-							e.text = str(int(issue))
-			if e.get('unit') == 'volume' : 
-				if volume: 
-					if isinstance(volume, str):
-						e.text = volume 
-					else:
-						if not math.isnan(volume):
-							str(int(volume))
-			if e.get('unit') == 'pp' : 
-				if page_range and isinstance(page_range, str): e.text = page_range 
-			if e.tag.endswith('date') and isinstance(cover_date, str): e.text = cover_date
-			if e.tag.endswith('publisher') : e.text = self.info_complement['publisher']
+			## ADD SourceDesc / bibliStruct / monogr / meeting : meeting
+			if dataTei['doctype'] == 'COMM' : 
+				#conf title
+				eMeeting = ET.Element('meeting')
+				eMonogr.insert(idx_item, eMeeting)
+				eTitle = ET.SubElement(eMeeting, 'title')
+				eTitle.text = self.info_complement['confname']
+						
+				#meeting date
+				eDate = ET.SubElement(eMeeting, 'date', {'type':'start'}) 
+				eDate.text = self.info_complement['confdate']
+						
+				#settlement
+				eSettlement = ET.SubElement(eMeeting, 'settlement')
+				eSettlement.text = self.info_complement['conflocation'] if self.info_complement['conflocation'] else 'unknown'
 
-		#_____ADD  sourceDesc / biblStruct : DOI & Pubmed
-		eBiblStruct = root.find(biblStructPath, ns)
-		if self.docid['doi'] : 
-			eDoi = ET.SubElement(eBiblStruct, 'idno', {'type':'doi'} )
-			eDoi.text = self.docid['doi']
+				#country
+				eSettlement = ET.SubElement(eMeeting, 'country',{'key':'fr'})
 
-		#___CHANGE  profileDesc / langUsage / language
-		eLanguage = root.find(biblFullPath+'/tei:profileDesc/tei:langUsage/tei:language', ns)
-		eLanguage.attrib['ident'] = dataTei["language"]
+			#___ CHANGE  sourceDesc / monogr / imprint :  vol, issue, page, pubyear, publisher
+			eImprint = root.find(biblStructPath+'/tei:monogr/tei:imprint', ns)
+			for e in list(eImprint):
+				if e.get('unit') == 'issue': 
+					if issue: 
+						if isinstance(issue, str):
+							e.text = issue 
+						else:
+							if not math.isnan(issue):
+								e.text = str(int(issue))
+				if e.get('unit') == 'volume' : 
+					if volume: 
+						if isinstance(volume, str):
+							e.text = volume 
+						else:
+							if not math.isnan(volume):
+								str(int(volume))
+				if e.get('unit') == 'pp' : 
+					if page_range and isinstance(page_range, str): e.text = page_range 
+				if e.tag.endswith('date') and isinstance(cover_date, str): e.text = cover_date
+				if e.tag.endswith('publisher') : e.text = self.info_complement['publisher']
 
-		#___CHANGE  profileDesc / textClass / keywords/ term
-		eKeywords = root.find(biblFullPath+'/tei:profileDesc/tei:textClass/tei:keywords', ns)
-		eKeywords.clear()
-		eKeywords.set('scheme', 'author')
-		for i in range(0, len(keywords_list)):
-			eTerm_i = ET.SubElement(eKeywords, 'term')
-			eTerm_i.set('xml:lang', dataTei['language'])
-			eTerm_i.text = keywords_list[i]
+			#_____ADD  sourceDesc / biblStruct : DOI & Pubmed
+			eBiblStruct = root.find(biblStructPath, ns)
+			if self.docid['doi'] : 
+				eDoi = ET.SubElement(eBiblStruct, 'idno', {'type':'doi'} )
+				eDoi.text = self.docid['doi']
 
-		#___CHANGE  profileDesc / textClass / classCode : hal domaine & hal doctype
-		eTextClass = root.find(biblFullPath+'/tei:profileDesc/tei:textClass', ns)
-		for e in list(eTextClass):
-			if e.tag.endswith('classCode') : 
-				if e.attrib['scheme'] == 'halDomain': e.attrib['n'] = dataTei['domain']
-				if e.attrib['scheme'] == 'halTypology': e.attrib['n'] = dataTei['doctype']
+			#___CHANGE  profileDesc / langUsage / language
+			eLanguage = root.find(biblFullPath+'/tei:profileDesc/tei:langUsage/tei:language', ns)
+			eLanguage.attrib['ident'] = dataTei["language"]
 
-		#___CHANGE  profileDesc / abstract 
-		eAbstract = root.find(biblFullPath+'/tei:profileDesc/tei:abstract', ns)
-		eAbstract.text = dataTei['abstract']
+			#___CHANGE  profileDesc / textClass / keywords/ term
+			eKeywords = root.find(biblFullPath+'/tei:profileDesc/tei:textClass/tei:keywords', ns)
+			eKeywords.clear()
+			eKeywords.set('scheme', 'author')
+			for i in range(0, len(keywords_list)):
+				eTerm_i = ET.SubElement(eKeywords, 'term')
+				eTerm_i.set('xml:lang', dataTei['language'])
+				eTerm_i.text = keywords_list[i]
+
+			#___CHANGE  profileDesc / textClass / classCode : hal domaine & hal doctype
+			eTextClass = root.find(biblFullPath+'/tei:profileDesc/tei:textClass', ns)
+			for e in list(eTextClass):
+				if e.tag.endswith('classCode') : 
+					if e.attrib['scheme'] == 'halDomain': e.attrib['n'] = dataTei['domain']
+					if e.attrib['scheme'] == 'halTypology': e.attrib['n'] = dataTei['doctype']
+
+			#___CHANGE  profileDesc / abstract 
+			eAbstract = root.find(biblFullPath+'/tei:profileDesc/tei:abstract', ns)
+			eAbstract.text = dataTei['abstract']
+
+
+		# Prepare differe parts of the tree.		
+		parse_funder()
+		parse_stamp()
+		parse_title()
+		parse_authors()
+		parse_bib_info()			
 
 		return tree
 
