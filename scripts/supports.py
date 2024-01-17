@@ -1147,7 +1147,7 @@ def search_for_lab(search_query_range, affil_names, lab_db_path, save_to_path):
         if not np.isnan(row['Scopus id']):
             search_query_author += 'AU-ID({}) OR '.format(int(row['Scopus id']))
         else:
-            search_query_author += '(AUTHLASTNAME({}) AND AUTHFIRST({})) OR '.format(row['Family name'], row['First name'][0])
+            search_query_author += 'AUTHOR-NAME({}, {}) OR '.format(row['Family name'], row['First name'][0])
     search_query_author = search_query_author[:-4]
     search_query_author += ')'
 
