@@ -1,0 +1,53 @@
+eid,doi,doctype,state,treat_info,hal_match,halUris,email_corr_auth
+2-s2.0-85137640598,10.1016/j.ress.2022.108770,ART,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85142261493,10.1016/j.ifacol.2022.09.011,COMM,TEI generated,,,,"yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85142234353,10.1016/j.ifacol.2022.09.013,COMM,TEI generated,,,,"yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85103246865,10.1109/TR.2021.3061175,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85109900500,10.1177/1748006X211028699,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85139388609,10.1109/TIM.2022.3207837,ART,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85129636032,10.1109/ICIN53892.2022.9758134,COMM,TEI generated,,,,"rui.li@centralesupelec.fr, anne.barros@centralesupelec.fr, yiping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr"
+2-s2.0-85116573986,10.1016/j.ress.2021.108091,ART,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85095418876,10.1177/1748006X20968954,ART,Error processing paper.,Error is: single positional indexer is out-of-bounds,,,
+2-s2.0-85106872144,10.3390/en14102888,ART,TEI generated,,,,"yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85100170341,10.1016/j.ress.2021.107443,ART,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, yi-ping.fang@centralesupelec.fr"
+2-s2.0-85088238545,10.1109/TII.2020.2998102,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85094325012,10.1016/j.ress.2020.107268,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85092228153,10.1016/j.apm.2020.08.066,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85135497898,10.3850/978-981-18-2016-8_434-cd,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85135437717,10.3850/978-981-18-2016-8_356-cd,COMM,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85129653267,10.3850/978-981-18-2016-8_219-cd,COMM,TEI generated,,,,"anne.barros@centralesupelec.fr, yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr"
+2-s2.0-85129600098,10.3850/978-981-18-2016-8_211-cd,COMM,TEI generated,,,,"rui.li@centralesupelec.fr, anne.barros@centralesupelec.fr, yiping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr"
+2-s2.0-85086595566,10.1016/j.ress.2020.107067,ART,Error processing paper.,Error is: attempt to get argmax of an empty sequence,,,
+2-s2.0-85083873403,10.1016/j.ress.2020.106947,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85077745269,10.1016/j.ssci.2019.104596,ART,Error processing paper.,Error is: attempt to get argmax of an empty sequence,,,
+2-s2.0-85107301162,10.3850/978-981-14-8593-0_4995-cd,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85089179250,10.3850/978-981-11-2724-30979-cd,COMM,Error processing paper.,Error is: attempt to get argmax of an empty sequence,,,
+2-s2.0-85072530616,10.1016/j.ssci.2019.08.043,ART,Error processing paper.,Error is: attempt to get argmax of an empty sequence,,,
+2-s2.0-85072563734,10.1016/j.ijdrr.2019.101334,ART,Error processing paper.,Error is: attempt to get argmax of an empty sequence,,,
+2-s2.0-85080121303,10.1109/ICSRS48664.2019.8987621,COMM,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, yi-ping.fang@centralesupelec.fr"
+2-s2.0-85070696503,10.1016/j.ress.2019.106552,ART,Error processing paper.,Error is: single positional indexer is out-of-bounds,,,
+2-s2.0-85065030373,10.1109/ICSRS.2018.8688845,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85056303883,10.1109/TR.2018.2874459,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85050465530,10.1016/j.cja.2018.05.014,ART,Error processing paper.,Error is: single positional indexer is out-of-bounds,,,
+2-s2.0-85040599059,10.1109/TR.2017.2778804,ART,Error processing paper.,Error is: single positional indexer is out-of-bounds,,,
+2-s2.0-85039741244,10.1016/j.ress.2017.12.003,ART,Error processing paper.,Error is: single positional indexer is out-of-bounds,,,
+2-s2.0-85032888897,10.1016/j.ins.2017.10.050,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85059693463,10.1109/ACCESS.2018.2882767,ART,Error processing paper.,Error is: single positional indexer is out-of-bounds,,,
+2-s2.0-85058108917,,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85017562754,10.1016/j.ssci.2017.04.001,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85028347754,10.1016/j.cja.2017.05.009,ART,TEI generated,,,,
+2-s2.0-85019070199,10.1016/j.ress.2017.05.004,ART,Error processing paper.,Error is: single positional indexer is out-of-bounds,,,
+2-s2.0-85028928243,10.1109/ACCESS.2017.2733839,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85046667164,10.1109/ICSRS.2017.8272809,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85046618602,10.1109/ICSRS.2017.8272859,COMM,Error processing paper.,Error is: single positional indexer is out-of-bounds,,,
+2-s2.0-84994226072,10.1016/j.asoc.2016.06.016,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-84997497801,10.1016/j.ress.2016.10.030,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85013638280,10.1371/journal.pone.0172680,ART,Error processing paper.,Error is: single positional indexer is out-of-bounds,,,
+2-s2.0-85013149404,10.1177/1748006X16683321,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85061377838,10.1201/9781315210469-413,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85061355328,10.1201/9781315210469-361,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85061351521,10.1201/9781315210469-193,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85061349671,10.1201/9781315210469-291,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85016216964,,COMM,TEI generated,,,,
+2-s2.0-85016177939,,COMM,TEI generated,,,,
+2-s2.0-85009468540,10.1016/j.psep.2016.12.002,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr

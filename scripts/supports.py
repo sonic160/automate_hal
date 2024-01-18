@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 from pybliometrics.scopus import ScopusSearch
 import pandas as pd
-from urllib.parse import quote
+from unidecode  import unidecode 
 
 
 class automate_hal:
@@ -926,10 +926,30 @@ class automate_hal:
 
 					Returns: None
 					'''
-					# Create a new 'affiliation' element under the 'eAuth' element
-					eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-					# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
-					eAffiliation_i.set('ref', '#struct-' + affil_id)
+					# Check if 'affiliation' subelement exists
+					existing_affiliations = eAuth.findall('affiliation')
+
+					if existing_affiliations:
+						# 'affiliation' subelement exists
+						found_matching_affiliation = False
+
+						# Check if any existing 'affiliation' has the same affil_id
+						for affiliation in existing_affiliations:
+							if 'ref' in affiliation.attrib and affiliation.attrib['ref'] == '#struct-' + affil_id:
+								found_matching_affiliation = True
+								print(f"Matching 'affiliation' found with affil_id {affil_id}: {affiliation}")
+								break
+
+						if not found_matching_affiliation:
+							# No matching 'affiliation' found, create a new one
+							eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
+							eAffiliation_i.set('ref', '#struct-' + affil_id)
+							# print(f"New 'affiliation' created with affil_id {affil_id}: {eAffiliation_i}")
+					else:
+						# 'affiliation' subelement does not exist, create a new one
+						eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
+						eAffiliation_i.set('ref', '#struct-' + affil_id)
+						# print(f"New 'affiliation' created with affil_id {affil_id}: {eAffiliation_i}")
 
 
 				# Define a function to sort df_affli_found based on the number of words in the affliation name.
@@ -1000,24 +1020,38 @@ class automate_hal:
 							df_affli_found = sort_by_name_length(df=df_affli_found)
 
 							# Keep only the affiliations that starts with the required name:
-							df_affli_found = df_affli_found[df_affli_found['label_s'].str.startswith(affil_name)]
+							df_without_accent = df_affli_found['label_s'].apply(unidecode).str.lower()
+							df_affli_found = df_affli_found[df_without_accent.str.startswith(
+								unidecode(affil_name[0].lower()))]
 
 							# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
 							# We count the number of parent institutions. If too many, this indicates that it is better to look at parent affiliations.
-							if sum(pd.notna(df_affli_found['parentName_s']))<7:								
+							def find_best_match(df_affli_found, affil_city):
 								# Check if the 'label_s' column contains the specified pattern: '[Location]'
 								pattern = "[{}]".format(affil_city) 
-								df_affli_found['contains_pattern'] = df_affli_found['label_s'].str.contains(pattern, regex=False)
+								# Check if 'contains_pattern' column exists, if not, create it
+								if 'contains_pattern' not in df_affli_found.columns:
+									df_affli_found['contains_pattern'] = False  
+
+								# Use .loc to modify the DataFrame without the warning
+								df_affli_found.loc[:, 'contains_pattern'] = df_affli_found['label_s'].str.contains(pattern, regex=False)
 
 								# Find the index of the first row where the pattern is true
 								first_match_index = df_affli_found['contains_pattern'].idxmax()
 
 								# Get the 'docid' value for the first matching row or the first row if no match
 								affil_dict = df_affli_found.iloc[first_match_index].to_dict() if df_affli_found['contains_pattern'].any() else df_affli_found.iloc[0].to_dict()
-								check_parent_affil(affil_dict, eAuth)														
-								affi_exist_in_hal = True
+								check_parent_affil(affil_dict, eAuth)
+							
+							if 'parentName_s' in df_affli_found.columns:
+								if sum(pd.notna(df_affli_found['parentName_s']))<7:						
+									find_best_match(df_affli_found, affil_city)														
+									affi_exist_in_hal = True
+								else:
+									affi_exist_in_hal = False
 							else:
-								affi_exist_in_hal = False
+								find_best_match(df_affli_found, affil_city)														
+								affi_exist_in_hal = True
 					else:
 						# Default: Not match.
 						affi_exist_in_hal = False
@@ -1069,8 +1103,8 @@ class automate_hal:
 								pass							
 							# Get the best-matched one and add it to the xml-tree.
 							affi_exist_in_hal = pick_affiliation_in_hal(search_result, eAuth, affil_city, affil_name=affil_unit)
-							if affi_exist_in_hal:
-								break # If best-match found, end the loop.												
+							# if affi_exist_in_hal:
+							# 	break # If best-match found, end the loop.												
 						
 						# If the affiliation does not exist in HAL, add the affiliation manually.
 						# If the affiliation is France, do not create new affiliation as HAL is used for evaluating affiliations, 
