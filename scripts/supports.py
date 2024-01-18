@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 from pybliometrics.scopus import ScopusSearch
 import pandas as pd
+from urllib.parse import quote
 
 
 class automate_hal:
@@ -555,13 +556,14 @@ class automate_hal:
 		return [num, docs]
 
 
-	def reqHalRef(self, ref_name, value=""):
+	def reqHalRef(self, ref_name, value="", return_field="&fl=docid,label_s&wt=json"):
 		"""
 		Performs a request to the HAL API to get references to some fields.
 
 		Parameters:
 		- ref_name (str): Reference field that you want information (e.g., 'structure', 'author').
 		- value (str): Value to search for (default: "").
+		- return_field (str): Field to return (default: "&fl=docid,label_s&wt=json").
 
 		Returns:
 		list: List containing the number of items found and a list of HAL documents.
@@ -569,7 +571,11 @@ class automate_hal:
 		"""
 
 		prefix = 'https://api.archives-ouvertes.fr/ref/'
-		suffix = "&fl=docid,label_s&wt=json"
+		suffix = return_field
+		# Encode the value to deal with special symbols like &
+		value = re.sub(r'&amp;', '& ', value)
+		value = re.sub(r'&', ' ', value)
+		# value = quote(value, safe='')
 		req = prefix + ref_name + '/?q=' + value + suffix
 		found = False
 
@@ -820,7 +826,7 @@ class automate_hal:
 
 			# Reset new affiliation index and list.
 			new_affiliation_idx = 0
-			new_affliation = []
+			new_affliation = []		
 
 			# For each author, write author information to the xml tree.
 			for aut in auths : 
@@ -850,81 +856,239 @@ class automate_hal:
 					idHAL = ET.SubElement(eAuth,'idno', {'type':'idhal'})
 					idHAL.text = aut['idHAL']
 
-				# Handling the affiliations.
+
+				# Sub-function definitions for handling affiliations.
+					
+				# Define a subfuntion to add a new affiliation.
+				def add_new_affiliation(new_affiliation_idx, new_affliation, aut_affil):
+					'''
+					This is a subfunction that create a new affiliation. First it will check if the affiliation already exists as a local structure.
+					If yes, it will directly refer to that. If no, it will create a new one.
+
+					Parameters:
+					- new_affiliation_idx (int): The index of the new affiliation.
+					- new_affliation (list): The list of new affiliations.
+					- aut_affil (str): The affiliation of the author.
+
+					Returns:
+					- new_affiliation_idx (int): The index of the new affiliation.
+					- new_affliation (list): The list of new affiliations.		
+
+					'''
+
+					# Dealing with special characters:
+					aut_affil = re.sub(r'&amp;', '& ', aut_affil)
+
+					# If it is the first new affiliation, create directly.
+					if new_affiliation_idx == 0:
+						new_affiliation_idx += 1 # Update the index.
+						# Create the new organization.
+						eBackOrg_i = ET.SubElement(eListOrg, 'org')
+						eBackOrg_i.set('type', 'institution')
+						eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
+						eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
+						eBackOrg_i_name.text = aut_affil
+						new_affliation.append(aut_affil)
+						# Make reference to the created affliation.
+						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+						eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+					else: # If it is not the first new affiliation, search if it has been created by us before.
+						try:
+							idx = new_affliation.index(aut_affil)
+							# If it has been created, make reference to it.
+							eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+							eAffiliation_manual.set('ref', 'localStruct-' + str(idx+1))	
+						except ValueError: # If not created, create a new one.
+							# Update the index.
+							new_affiliation_idx += 1
+							# Create the new organization.
+							eBackOrg_i = ET.SubElement(eListOrg, 'org')
+							eBackOrg_i.set('type', 'institution')
+							eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
+							eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
+							eBackOrg_i_name.text = aut_affil
+							new_affliation.append(aut_affil)	
+							# Make reference to the created affliation.
+							eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+							eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+
+					return new_affiliation_idx, new_affliation
+				
+
+				# Sub-functions supporting parsing affiliations.
+				def add_affiliation_by_affil_id(eAuth, affil_id):
+					''' 
+					If affiliation_id is provided in authDB: Use them directly to create a section for affiliation in the tei-xml tree.
+
+					Parameters: 
+					- eAuth (ET.Element): The element to which the 'affiliation' element will be added. 
+					- affil_id (str): The id of the affiliation to be added. 
+
+					Returns: None
+					'''
+					# Create a new 'affiliation' element under the 'eAuth' element
+					eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
+					# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
+					eAffiliation_i.set('ref', '#struct-' + affil_id)
+
+
+				# Define a function to sort df_affli_found based on the number of words in the affliation name.
+				def sort_by_name_length(df):																			
+					# Function to calculate the number of words in a string
+					def count_words(text):
+						return len(text.split())										
+					# Add a new column 'word_count' with the number of words in 'label_s'
+					df['word_count'] = df['label_s'].apply(count_words)
+					# Sort the DataFrame based on the 'word_count' column
+					df_sorted = df.sort_values(by='word_count').reset_index(drop=True)
+					# Drop the 'word_count' column if you don't need it in the final result
+					df_sorted = df_sorted.drop(columns='word_count')
+
+					return df_sorted
+				
+
+				# Define a function to pick the affiliation in HAL, based on the search result.
+				'''
+				This function checks the results from HAL and pick the best-matched affiliation. It will create a section based on the accociated affiliation id in the xml tree.
+				
+				Parameters:
+					- search_result (list): The result from HAL search.
+					- eAuth (ET.Element): The element to which the 'affiliation' element will be added. 
+					- affil_city (str): The city of the affiliation to be added. 
+
+				Return:
+					- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False. 
+				'''
+				def pick_affiliation_in_hal(search_result, eAuth, affil_city, affil_name):
+
+					# Define a function to check if the matched affiliation has parent affiliation.
+					def check_parent_affil(affil_dict, eAuth):
+						affil_ids = []
+						affil_ids.append(affil_dict['docid'])
+						if 'parentValid_s' in affil_dict and 'parentDocid_i' in affil_dict:
+							try:
+								for idx, parent_id in enumerate(affil_dict['parentDocid_i']):
+									if affil_dict['parentValid_s'][idx]=='VALID':
+										affil_ids.append(parent_id)
+							except:
+								pass
+
+						# Create a new 'affiliation' element under the 'eAuth' element
+						for affil_id in affil_ids:
+							add_affiliation_by_affil_id(eAuth=eAuth, affil_id=affil_id)
+
+
+					if search_result[0] > 0:
+						# If only one matches found, use it as the affilation:
+						if search_result[0] == 1:
+							affil_dict = search_result[1][0]
+							check_parent_affil(affil_dict, eAuth)														
+							affi_exist_in_hal = True
+						else: # If more than one affliation found:
+							# Create a dataframe to get all the found affliations.
+							for i in range(len(search_result[1])):
+								if i == 0:
+									df_affli_found = pd.DataFrame([search_result[1][i]])
+								else:
+									df_affli_found = pd.concat([df_affli_found, pd.DataFrame([search_result[1][i]])], ignore_index=True)
+							
+							# Sort the result by the length of the affiliation name.
+							# Search logic: We first identify the affiliation name with the pattern Name + [Location].
+							# If not found, we use the one with the shortest name.
+							
+							# Sort by name lengh.
+							df_affli_found = sort_by_name_length(df=df_affli_found)
+
+							# Keep only the affiliations that starts with the required name:
+							df_affli_found = df_affli_found[df_affli_found['label_s'].str.startswith(affil_name)]
+
+							# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
+							# We count the number of parent institutions. If too many, this indicates that it is better to look at parent affiliations.
+							if sum(pd.notna(df_affli_found['parentName_s']))<7:								
+								# Check if the 'label_s' column contains the specified pattern: '[Location]'
+								pattern = "[{}]".format(affil_city) 
+								df_affli_found['contains_pattern'] = df_affli_found['label_s'].str.contains(pattern, regex=False)
+
+								# Find the index of the first row where the pattern is true
+								first_match_index = df_affli_found['contains_pattern'].idxmax()
+
+								# Get the 'docid' value for the first matching row or the first row if no match
+								affil_dict = df_affli_found.iloc[first_match_index].to_dict() if df_affli_found['contains_pattern'].any() else df_affli_found.iloc[0].to_dict()
+								check_parent_affil(affil_dict, eAuth)														
+								affi_exist_in_hal = True
+							else:
+								affi_exist_in_hal = False
+					else:
+						# Default: Not match.
+						affi_exist_in_hal = False
+
+				
+					return affi_exist_in_hal
+
+
+				# Start handling the affiliations.
+					
 				# if affili_id is provided in authDB: Use them directly.
 				if aut['affil_id']:
 					affil_ids = aut['affil_id'].split(', ') 			
-					# Dictionary to store eAffiliation elements
-					eAffiliation_dict = {}
 					# Create an 'affiliation' element for each id
 					for affil_id in affil_ids:
-						# Create a new 'affiliation' element under the 'eAuth' element
-						eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-						# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
-						eAffiliation_i.set('ref', '#struct-' + affil_id)
-						# Store the 'eAffiliation_i' element in the dictionary with the current id as the key
-						eAffiliation_dict[affil_id] = eAffiliation_i
+						add_affiliation_by_affil_id(eAuth=eAuth, affil_id=affil_id)						
 				else:
 					# Extract the affiliation name from the search results.
 					aut_affils = aut['affil']
 					if aut_affils[0] == None:
 						aut_affils = ['Unknown']
-					for aut_affil in aut_affils:
+					affil_countries = aut['affil_country']
+					affli_cities = aut['affil_city']
+
+					# Loop for all the affliations from one author.						
+					for index, aut_affil in enumerate(aut_affils):
+						# Initially set to be not existed.
+						affi_exist_in_hal = False
+						affil_country = affil_countries[index]
+						affil_city = affli_cities[index]
+
 						# Remove the ';' at the end of the affiliation. 
 						if aut_affil.endswith('; '):
-							aut_affil = aut_affil.rstrip('; ')                   
-						
-						# Search HAL to find the affiliation.
-						affi_exist_in_hal = False
-						search_result = self.reqHalRef(ref_name='structure', value=aut_affil)
-						if search_result[0] > 0: # Find affiliation with the same names in HAL.
-							# Check the HAL affiliation contains some other affiliation.
-							for i in range(len(search_result[1])):
-								affli_info = search_result[1][i]
-								if aut_affil.lower() == affli_info['label_s'].lower():								
-									# Set affil_id
-									affil_id =  search_result[1][i]['docid']
-									# Create a new 'affiliation' element under the 'eAuth' element
-									eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-									# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
-									eAffiliation_i.set('ref', '#struct-' + affil_id)
-									affi_exist_in_hal = True
-									break
+							aut_affil = aut_affil.rstrip('; ')
+
+						# If the affliation is like department XXX, University XXX.
+						# If so, extract the department and then university name.
+						aut_affil_list = aut_affil.split(', ')
+
+						# Start to search from the left-most unit (smallest):
+						for affil_unit in aut_affil_list:						            											
+							# Search for the valid affliations in HAL.
+							try:
+								search_result = self.reqHalRef(ref_name='structure', 
+											value='(text:"{}" valid_s:"VALID")'.format(affil_unit), 
+											return_field='&fl=docid,label_s,parentName_s,parentDocid_i,parentValid_s&wt=json"')
+							except:
+								search_result = [0]
+								pass							
+							# Get the best-matched one and add it to the xml-tree.
+							affi_exist_in_hal = pick_affiliation_in_hal(search_result, eAuth, affil_city, affil_name=affil_unit)
+							if affi_exist_in_hal:
+								break # If best-match found, end the loop.												
 						
 						# If the affiliation does not exist in HAL, add the affiliation manually.
-						if not affi_exist_in_hal: 
-							# If it is the first new affiliation, create directly.
-							if new_affiliation_idx == 0:
-								new_affiliation_idx += 1 # Update the index.
-								# Create the new organization.
-								eBackOrg_i = ET.SubElement(eListOrg, 'org')
-								eBackOrg_i.set('type', 'institution')
-								eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
-								eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
-								eBackOrg_i_name.text = aut_affil
-								new_affliation.append(aut_affil)
-								# Make reference to the created affliation.
-								eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-								eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
-							else: # If it is not the first new affiliation, search if it has been created by us before.
-								try:
-									idx = new_affliation.index(aut_affil)
-									# If it has been created, make reference to it.
-									eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-									eAffiliation_manual.set('ref', 'localStruct-' + str(idx+1))	
-								except ValueError: # If not created, create a new one.
-									# Update the index.
-									new_affiliation_idx += 1
-									# Create the new organization.
-									eBackOrg_i = ET.SubElement(eListOrg, 'org')
-									eBackOrg_i.set('type', 'institution')
-									eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
-									eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
-									eBackOrg_i_name.text = aut_affil
-									new_affliation.append(aut_affil)	
-									# Make reference to the created affliation.
-									eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-									eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+						# If the affiliation is France, do not create new affiliation as HAL is used for evaluating affiliations, 
+						# so there is a stricker rule regarding creating affiliations.
+						if not affi_exist_in_hal and affil_country.lower() != 'france':
+							# Before adding new affiliation, check if the affiliation exists in HAL but not VALID
+							# Search for the valid affliations in HAL.
+							try:
+								# Here we don't require that the affiliation in HAL is valid.
+								search_result = self.reqHalRef(ref_name='structure', 
+											value='(text:"{}")'.format(aut_affil), 
+											return_field='&fl=docid,label_s,parentName_s,parentDocid_i,parentValid_s&wt=json"')
+							except:
+								search_result = [0]
+								pass
+							if not pick_affiliation_in_hal(search_result, eAuth, affil_city='', affil_name=aut_affil):
+								new_affiliation_idx, new_affliation = add_new_affiliation(new_affiliation_idx, new_affliation, aut_affil) 
+							
 
 			# In the end, if no new affiliations are added, remove the 'eBack' element.
 			if new_affiliation_idx == 0:
