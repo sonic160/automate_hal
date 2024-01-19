@@ -937,7 +937,7 @@ class automate_hal:
 						for affiliation in existing_affiliations:
 							if 'ref' in affiliation.attrib and affiliation.attrib['ref'] == '#struct-' + affil_id:
 								found_matching_affiliation = True
-								print(f"Matching 'affiliation' found with affil_id {affil_id}: {affiliation}")
+								# print(f"Matching 'affiliation' found with affil_id {affil_id}: {affiliation}")
 								break
 
 						if not found_matching_affiliation:
@@ -1023,35 +1023,51 @@ class automate_hal:
 							df_without_accent = df_affli_found['label_s'].apply(unidecode).str.lower()
 							df_affli_found = df_affli_found[df_without_accent.str.startswith(
 								unidecode(affil_name[0].lower()))]
+							
 
 							# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
 							# We count the number of parent institutions. If too many, this indicates that it is better to look at parent affiliations.
 							def find_best_match(df_affli_found, affil_city):
-								# Check if the 'label_s' column contains the specified pattern: '[Location]'
-								pattern = "[{}]".format(affil_city) 
-								# Check if 'contains_pattern' column exists, if not, create it
-								if 'contains_pattern' not in df_affli_found.columns:
-									df_affli_found['contains_pattern'] = False  
+								'''
+								Given an input DataFrame of possible affiliations, find the best match for the specified pattern. 
 
-								# Use .loc to modify the DataFrame without the warning
-								df_affli_found.loc[:, 'contains_pattern'] = df_affli_found['label_s'].str.contains(pattern, regex=False)
+								Parameters:
+									- df_affli_found (pd.DataFrame): The DataFrame of possible affiliations.
+									- affil_city (str): The city of the affiliation to be added. 
 
-								# Find the index of the first row where the pattern is true
-								first_match_index = df_affli_found['contains_pattern'].idxmax()
+								Return:
+									- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False.
+								'''
+								affi_exist_in_hal = False
+								if not df_affli_found.empty:
+									# Check if the 'label_s' column contains the specified pattern: '[Location]'
+									pattern = "[{}]".format(affil_city) 
+									# Check if 'contains_pattern' column exists, if not, create it
+									if 'contains_pattern' not in df_affli_found.columns:
+										df_affli_found['contains_pattern'] = False  
 
-								# Get the 'docid' value for the first matching row or the first row if no match
-								affil_dict = df_affli_found.iloc[first_match_index].to_dict() if df_affli_found['contains_pattern'].any() else df_affli_found.iloc[0].to_dict()
-								check_parent_affil(affil_dict, eAuth)
+									# Use .loc to modify the DataFrame without the warning
+									df_affli_found.loc[:, 'contains_pattern'] = df_affli_found['label_s'].str.contains(pattern, regex=False)
+
+									# Find the index of the first row where the pattern is true
+									first_match_index = df_affli_found['contains_pattern'].idxmax()
+
+									# Get the 'docid' value for the first matching row or the first row if no match
+									affil_dict = df_affli_found.loc[first_match_index].to_dict() if df_affli_found['contains_pattern'].any() else df_affli_found.iloc[0].to_dict()
+									check_parent_affil(affil_dict, eAuth)
+
+									affi_exist_in_hal = True
+
+								return affi_exist_in_hal
 							
+
 							if 'parentName_s' in df_affli_found.columns:
 								if sum(pd.notna(df_affli_found['parentName_s']))<7:						
-									find_best_match(df_affli_found, affil_city)														
-									affi_exist_in_hal = True
+									affi_exist_in_hal = find_best_match(df_affli_found, affil_city)														
 								else:
 									affi_exist_in_hal = False
 							else:
-								find_best_match(df_affli_found, affil_city)														
-								affi_exist_in_hal = True
+								affi_exist_in_hal = find_best_match(df_affli_found, affil_city)																				
 					else:
 						# Default: Not match.
 						affi_exist_in_hal = False

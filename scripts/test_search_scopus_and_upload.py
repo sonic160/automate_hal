@@ -35,7 +35,7 @@ if __name__ == '__main__':
 
     # For debugging: Only upload the first rowRange records.
     # Comment this line if you want to upload all the records.
-    rowRange=[20, 70]
+    rowRange=[32, 70]
     auto_hal.debug_mode = True
     auto_hal.upload_to_hal = False
 
