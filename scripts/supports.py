@@ -926,6 +926,22 @@ class automate_hal:
 
 					Returns: None
 					'''
+
+					# Define a subfunction for adding the affiliation element in the xml tree.
+					def add_subelement_for_affil_id(eAuth, affil_id):
+						eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
+						eAffiliation_i.set('ref', '#struct-' + affil_id)
+						# For debugging onle: Print also affiliation name.
+						# Remove this after debugging!
+						try:
+							search_result = self.reqHalRef(ref_name='structure', 
+										value='(docid:{})'.format(affil_id), 
+										return_field='&fl=label_s&wt=json')
+							eAffiliation_i.set('name', search_result[1][0]['label_s'])
+						except:
+							pass
+						
+
 					# Check if 'affiliation' subelement exists
 					existing_affiliations = eAuth.findall('affiliation')
 
@@ -942,13 +958,11 @@ class automate_hal:
 
 						if not found_matching_affiliation:
 							# No matching 'affiliation' found, create a new one
-							eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-							eAffiliation_i.set('ref', '#struct-' + affil_id)
+							add_subelement_for_affil_id(eAuth, affil_id)
 							# print(f"New 'affiliation' created with affil_id {affil_id}: {eAffiliation_i}")
 					else:
 						# 'affiliation' subelement does not exist, create a new one
-						eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-						eAffiliation_i.set('ref', '#struct-' + affil_id)
+						add_subelement_for_affil_id(eAuth, affil_id)
 						# print(f"New 'affiliation' created with affil_id {affil_id}: {eAffiliation_i}")
 
 
@@ -968,19 +982,19 @@ class automate_hal:
 				
 
 				# Define a function to pick the affiliation in HAL, based on the search result.
-				'''
-				This function checks the results from HAL and pick the best-matched affiliation. It will create a section based on the accociated affiliation id in the xml tree.
 				
-				Parameters:
-					- search_result (list): The result from HAL search.
-					- eAuth (ET.Element): The element to which the 'affiliation' element will be added. 
-					- affil_city (str): The city of the affiliation to be added. 
-
-				Return:
-					- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False. 
-				'''
 				def pick_affiliation_in_hal(search_result, eAuth, affil_city, affil_name):
+					'''
+					This function checks the results from HAL and pick the best-matched affiliation. It will create a section based on the accociated affiliation id in the xml tree.
+					
+					Parameters:
+						- search_result (list): The result from HAL search.
+						- eAuth (ET.Element): The element to which the 'affiliation' element will be added. 
+						- affil_city (str): The city of the affiliation to be added. 
 
+					Return:
+						- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False. 
+					'''
 					# Define a function to check if the matched affiliation has parent affiliation.
 					def check_parent_affil(affil_dict, eAuth):
 						affil_ids = []
@@ -996,6 +1010,42 @@ class automate_hal:
 						# Create a new 'affiliation' element under the 'eAuth' element
 						for affil_id in affil_ids:
 							add_affiliation_by_affil_id(eAuth=eAuth, affil_id=affil_id)
+
+
+					# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
+					# We count the number of parent institutions. If too many, this indicates that it is better to look at parent affiliations.
+					def find_best_match(df_affli_found, affil_city):
+						'''
+						Given an input DataFrame of possible affiliations, find the best match for the specified pattern. 
+
+						Parameters:
+							- df_affli_found (pd.DataFrame): The DataFrame of possible affiliations.
+							- affil_city (str): The city of the affiliation to be added. 
+
+						Return:
+							- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False.
+						'''
+						affi_exist_in_hal = False
+						if not df_affli_found.empty:
+							# Check if the 'label_s' column contains the specified pattern: '[Location]'
+							pattern = "[{}]".format(affil_city) 
+							# Check if 'contains_pattern' column exists, if not, create it
+							if 'contains_pattern' not in df_affli_found.columns:
+								df_affli_found['contains_pattern'] = False  
+
+							# Use .loc to modify the DataFrame without the warning
+							df_affli_found.loc[:, 'contains_pattern'] = df_affli_found['label_s'].str.contains(pattern, regex=False)
+
+							# Find the index of the first row where the pattern is true
+							first_match_index = df_affli_found['contains_pattern'].idxmax()
+
+							# Get the 'docid' value for the first matching row or the first row if no match
+							affil_dict = df_affli_found.loc[first_match_index].to_dict() if df_affli_found['contains_pattern'].any() else df_affli_found.iloc[0].to_dict()
+							check_parent_affil(affil_dict, eAuth)
+
+							affi_exist_in_hal = True
+
+						return affi_exist_in_hal
 
 
 					if search_result[0] > 0:
@@ -1022,45 +1072,8 @@ class automate_hal:
 							# Keep only the affiliations that starts with the required name:
 							df_without_accent = df_affli_found['label_s'].apply(unidecode).str.lower()
 							df_affli_found = df_affli_found[df_without_accent.str.startswith(
-								unidecode(affil_name[0].lower()))]
-							
-
-							# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
-							# We count the number of parent institutions. If too many, this indicates that it is better to look at parent affiliations.
-							def find_best_match(df_affli_found, affil_city):
-								'''
-								Given an input DataFrame of possible affiliations, find the best match for the specified pattern. 
-
-								Parameters:
-									- df_affli_found (pd.DataFrame): The DataFrame of possible affiliations.
-									- affil_city (str): The city of the affiliation to be added. 
-
-								Return:
-									- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False.
-								'''
-								affi_exist_in_hal = False
-								if not df_affli_found.empty:
-									# Check if the 'label_s' column contains the specified pattern: '[Location]'
-									pattern = "[{}]".format(affil_city) 
-									# Check if 'contains_pattern' column exists, if not, create it
-									if 'contains_pattern' not in df_affli_found.columns:
-										df_affli_found['contains_pattern'] = False  
-
-									# Use .loc to modify the DataFrame without the warning
-									df_affli_found.loc[:, 'contains_pattern'] = df_affli_found['label_s'].str.contains(pattern, regex=False)
-
-									# Find the index of the first row where the pattern is true
-									first_match_index = df_affli_found['contains_pattern'].idxmax()
-
-									# Get the 'docid' value for the first matching row or the first row if no match
-									affil_dict = df_affli_found.loc[first_match_index].to_dict() if df_affli_found['contains_pattern'].any() else df_affli_found.iloc[0].to_dict()
-									check_parent_affil(affil_dict, eAuth)
-
-									affi_exist_in_hal = True
-
-								return affi_exist_in_hal
-							
-
+								unidecode(affil_name[0].lower()))]					
+												
 							if 'parentName_s' in df_affli_found.columns:
 								if sum(pd.notna(df_affli_found['parentName_s']))<7:						
 									affi_exist_in_hal = find_best_match(df_affli_found, affil_city)														

@@ -1,4 +1,36 @@
 eid,doi,doctype,state,treat_info,hal_match,halUris,email_corr_auth
+2-s2.0-85178664213,10.1016/j.ress.2023.109834,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85165538390,10.1016/j.ress.2023.109515,ART,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85159721070,10.1109/TNSM.2023.3269673,ART,TEI generated,,,,"rui.li@centralesupelec.fr, anne.barros@centralesupelec.fr, yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr"
+2-s2.0-85159205217,10.1016/j.ress.2023.109364,ART,TEI generated,,,,"yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85147705423,10.1016/j.ejor.2023.01.060,ART,TEI generated,,,,"yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85149406585,10.1016/j.ress.2023.109199,ART,TEI generated,,,,"anne.barros@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr"
+2-s2.0-85135760993,10.1109/TR.2022.3187075,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85172788020,10.5220/0011669800003396,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85151498277,10.1109/ISGT51731.2023.10066340,COMM,TEI generated,,,,"yiping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85141134865,10.1080/24725854.2022.2125602,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85138112493,10.1080/24725854.2022.2062627,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85144185585,10.1109/TR.2021.3087531,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85137640598,10.1016/j.ress.2022.108770,ART,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85142261493,10.1016/j.ifacol.2022.09.011,COMM,TEI generated,,,,"yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85142234353,10.1016/j.ifacol.2022.09.013,COMM,TEI generated,,,,"yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85103246865,10.1109/TR.2021.3061175,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85109900500,10.1177/1748006X211028699,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85139388609,10.1109/TIM.2022.3207837,ART,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85129636032,10.1109/ICIN53892.2022.9758134,COMM,TEI generated,,,,"rui.li@centralesupelec.fr, anne.barros@centralesupelec.fr, yiping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr"
+2-s2.0-85116573986,10.1016/j.ress.2021.108091,ART,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85095418876,10.1177/1748006X20968954,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85106872144,10.3390/en14102888,ART,TEI generated,,,,"yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85100170341,10.1016/j.ress.2021.107443,ART,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, yi-ping.fang@centralesupelec.fr"
+2-s2.0-85088238545,10.1109/TII.2020.2998102,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85094325012,10.1016/j.ress.2020.107268,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85092228153,10.1016/j.apm.2020.08.066,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85135497898,10.3850/978-981-18-2016-8_434-cd,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85135437717,10.3850/978-981-18-2016-8_356-cd,COMM,TEI generated,,,,"zhiguo.zeng@centralesupelec.fr, anne.barros@centralesupelec.fr"
+2-s2.0-85129653267,10.3850/978-981-18-2016-8_219-cd,COMM,TEI generated,,,,"anne.barros@centralesupelec.fr, yi-ping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr"
+2-s2.0-85129600098,10.3850/978-981-18-2016-8_211-cd,COMM,TEI generated,,,,"rui.li@centralesupelec.fr, anne.barros@centralesupelec.fr, yiping.fang@centralesupelec.fr, zhiguo.zeng@centralesupelec.fr"
+2-s2.0-85086595566,10.1016/j.ress.2020.107067,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
+2-s2.0-85083873403,10.1016/j.ress.2020.106947,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
 2-s2.0-85077745269,10.1016/j.ssci.2019.104596,ART,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
 2-s2.0-85107301162,10.3850/978-981-14-8593-0_4995-cd,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
 2-s2.0-85089179250,10.3850/978-981-11-2724-30979-cd,COMM,TEI generated,,,,zhiguo.zeng@centralesupelec.fr
