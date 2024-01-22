@@ -6,6 +6,7 @@ from pybliometrics.scopus import ScopusSearch
 import pandas as pd
 from unidecode  import unidecode 
 import pycountry as pycountry
+import copy
 
 
 class automate_hal:
@@ -379,8 +380,7 @@ class automate_hal:
 		if not self.matchDocType(doc_type):
 			return
 		# Verify if the paper is already in HAL.
-		elif not self.debug_mode:
-			if self.verify_if_existed_in_hal(doc):
+		elif not self.debug_mode and self.verify_if_existed_in_hal(doc):
 				return			
 		else:        
 			# Extract & enrich authors data
@@ -815,6 +815,269 @@ class automate_hal:
 			eAnalytic.insert(0, eTitle)
 
 
+		# Define a function to pick the affiliation in HAL, based on the search result.
+			
+		def pick_affiliation_in_hal(search_result, affil_country='', affil_city='', affil_name='', aut='', parent_affil_id='', invalide_affil=False):
+			'''
+			This function checks the results from HAL and pick the best-matched affiliation. It will create a section based on the accociated affiliation id in the xml tree.
+			
+			Parameters:
+				- search_result (list): The result from HAL search.
+				- affil_city (str): The city of the affiliation to be added.
+				- parent_affil_id (str): The id of the parent affiliation.  
+
+			Return:
+				- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False. 
+				- best_match_affil_id (str): The dict of the best match affiliation.
+			'''
+
+			# Subfunction defintions.
+
+			# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
+			# We count the number of parent institutions. If too many, this indicates that it is better to look at parent affiliations.
+			def check_affil_city(df_affli_found, affil_city):
+				'''
+				Given an input DataFrame of possible affiliations, find the best match for the specified pattern. 
+
+				Parameters:
+					- df_affli_found (pd.DataFrame): The DataFrame of possible affiliations.
+					- affil_city (str): The city of the affiliation to be added. 
+
+				Return:
+					- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False.
+					- affil_dict (dict): A dictionary of the affiliation of the best match found.
+				'''
+
+				# Custom function to clean and format the address
+				def clean_and_format_address(address):
+					output = ''
+					if pd.notna(address):
+						address = unidecode(address)								
+						cleaned_address = re.sub(r'[^a-zA-Z0-9 ]', ' ', address)  # Keep only letters and numbers
+						output = cleaned_address.lower()
+				
+					return output
+
+				if not df_affli_found.empty:
+					affil_city = clean_and_format_address(affil_city)
+					if 'address_s' in df_affli_found.columns:
+						# Conditino 2: Address contains the city
+						df_affli_found['cleaned address_s'] = df_affli_found['address_s'].apply(clean_and_format_address)
+						condition_2 = df_affli_found['cleaned address_s'].str.contains(affil_city, regex=False)				
+					
+						# Condition 1: XXX [Location] in affilication name
+						pattern = "[{}]".format(affil_city)				
+						condition_1 = df_affli_found['label_s'].str.lower().str.contains(pattern, regex=False)
+
+						# Condition 3: NaN in the address
+						condition_3 = pd.isna(df_affli_found['address_s'])	
+
+						df_affli_found = df_affli_found[condition_1 | condition_2 | condition_3]
+					
+				return df_affli_found
+			
+
+			# Define a function to sort df_affli_found based on the number of words in the affliation name.
+			def sort_by_name_length(df):																			
+				# Function to calculate the number of words in a string
+				def count_words(text):
+					return len(text.split())										
+				# Add a new column 'word_count' with the number of words in 'label_s'
+				df['word_count'] = df['label_s'].apply(count_words)
+				# Sort the DataFrame based on the 'word_count' column
+				df_sorted = df.sort_values(by='word_count').reset_index(drop=True)
+				# Drop the 'word_count' column if you don't need it in the final result
+				df_sorted = df_sorted.drop(columns='word_count')
+
+				return df_sorted
+			
+
+			def check_university_group(df_affli_found):
+				'''
+				Check if an affiliation in df_affil_found is the parent of others in df_affil_found.
+				If so, we could remove the children from the candidate list.
+
+				Parameters:
+					- df_affli_found: Pandas DataFrame, the dataframe of the affiliation found in the database.
+				Return:
+					- df_affli_found: After removal.
+				'''
+
+				# Function to check if a row is a child of other rows.
+				def not_child(row):
+					other_rows = df_affli_found[df_affli_found.index != row.name]  # Exclude the current row
+					if 'parentDocid_i' in row.index:
+						parent_ids = row['parentDocid_i']
+						if isinstance(pd.isna(parent_ids), bool):
+							if pd.isna(parent_ids):
+								return True								
+						else:
+							if all(pd.isna(parent_ids)):
+								return True
+					
+						for _, other_row in other_rows.iterrows():
+							if other_row['docid'] in parent_ids:
+								return False
+							
+					return True
+
+
+				if not df_affli_found.empty:
+					# Apply the function to identify the child affiliations.
+					flag = []
+					for i in range(len(df_affli_found)):
+						flag.append(not_child(df_affli_found.iloc[i]))
+
+					df_affli_found = df_affli_found[flag]
+
+				return df_affli_found
+			
+
+			def check_published_before(df_affli_found, aut):
+				affi_exist_in_hal = False
+				best_affil_dict = {}
+
+				if not df_affli_found.empty:
+					# Check in the remaining candidates, if the authors appeared in HAL with the candidate affiliation before.
+					flag = []
+					for i in range(len(df_affli_found)):
+						field = 'structId_i:{}&fq=auth_t:"{} {}"'.format(df_affli_found.iloc[i]['docid'], aut['forename'], aut['surname'])
+						num, _ = self.reqHal(field=field)
+						flag.append(num>0)
+					if any(flag):
+						df_affli_found = df_affli_found[flag]
+						
+						affi_exist_in_hal = True
+						best_affil_dict = df_affli_found.iloc[0].to_dict()
+
+				return affi_exist_in_hal, best_affil_dict
+			
+
+			def return_callback_func(affi_exist_in_hal=False, best_affil_dict={}, affil_name=''):					
+				# # Final check: The affiliation name should not be too different from the original name.
+				# if affi_exist_in_hal:
+				# 	result_name = unidecode(best_affil_dict['label_s']).lower()
+				# 	affil_name = unidecode(affil_name).lower()
+				# 	result_words = result_name.split()
+				# 	affil_words = affil_name.split()
+				# 	difference = abs(len(result_words) - len(affil_words))
+
+				# 	if difference > 3 and not '[{}]'.format(affil_name) in result_name:
+				# 		affi_exist_in_hal=False
+				# 		best_affil_dict={}
+					
+										
+				# Return the callback function
+				return affi_exist_in_hal, best_affil_dict
+			
+
+			# End of subfunction definition. Start execution.
+
+			if search_result[0] > 0:
+				# Create a dataframe to get all the found affliations.
+				for i in range(len(search_result[1])):
+					if i == 0:
+						df_affli_found = pd.DataFrame([search_result[1][i]])
+					else:
+						df_affli_found = pd.concat([df_affli_found, pd.DataFrame([search_result[1][i]])], ignore_index=True)
+
+				# If used for invalid affiliations.
+				# Only check if it is an exact match.
+				if invalide_affil:
+					df_exact = df_affli_found[df_affli_found['label_s'].str.lower()==affil_name.lower()]
+
+					if not df_exact.empty:
+						return return_callback_func(affi_exist_in_hal=True, best_affil_dict=df_exact.iloc[0].to_dict())
+					else:
+						return return_callback_func()			
+					
+
+				# If the current parent affil list is not empty:
+				if len(parent_affil_id) > 0:
+					# If we have already some parent affils, we need to first screen the candidate results to remove 
+					# those with different parent affil ids.
+					if 'parentDocid_i' in df_affli_found.columns:
+						# Filter rows based on the condition (including NaN values and handling comma-separated values)
+						tmp_df_1 = df_affli_found[pd.isna(df_affli_found['parentDocid_i'])]
+						tmp_df_1[tmp_df_1['label_s'].apply(unidecode).str.lower()==unidecode(affil_name).lower()]
+						tmp_df_2 = df_affli_found[pd.notna(df_affli_found['parentDocid_i'])]
+						tmp_df_2 = tmp_df_2[tmp_df_2['parentDocid_i'].apply(lambda x: any(item in parent_affil_id for item in x))]
+						df_affli_found = pd.concat([tmp_df_1, tmp_df_2])
+						
+						# If after the operation, no affiliation left: Return directly.
+						if df_affli_found.empty:
+							return return_callback_func()
+
+				# Search logic: We first identify the affiliation name with the pattern Name + [Location].
+				# If not found, we use the one with the shortest name.
+										
+				# Sort by name lengh.
+				df_affli_found = sort_by_name_length(df=df_affli_found)
+
+				# Take maximal 40 records.
+				if len(df_affli_found) > 40:
+					df_affli_found = df_affli_found.iloc[:40, :]
+
+				# Check if the input affil name is an acronym.
+				# If yes, only consider the items that contain the full name.
+				if len(affil_name.split(' ')) == 1:
+					flag = df_affli_found['label_s'].str.lower().str.contains('[{}]'.format(affil_name.lower()), regex=False)
+					if any(flag):
+						df_affli_found = df_affli_found[flag]
+
+				# Remove the child affiliations in the list.
+				df_affli_found = check_university_group(df_affli_found)
+
+				# If in the remaining affiliations, the author has published before: Select the first one.
+				affi_exist_in_hal, best_affil_dict = check_published_before(df_affli_found, aut)
+				if affi_exist_in_hal:				
+					return return_callback_func(affi_exist_in_hal, best_affil_dict, affil_name)
+				
+				# # Keep only the affiliations that starts with the required name:
+				# df_without_accent = df_affli_found['label_s'].apply(unidecode).str.lower()
+				# df_affli_found = df_affli_found[df_without_accent.str.startswith(
+				# 	unidecode(affil_name[0].lower()))]
+							
+				# The affiliation country needs to match.
+				if affil_country:
+					try:
+						df_affli_found = df_affli_found[df_affli_found['country_s']==affil_country]
+					except:
+						pass					
+				
+				# If the affiliation name ends with [Location], pick the one that matches the actual location.
+				df_affli_found = check_affil_city(df_affli_found, affil_city)
+				if df_affli_found.empty:	
+					return return_callback_func()
+				
+				# If there is exact matched affil name:
+				if pd.notna(affil_city):
+					df_exact = pd.concat([
+						df_affli_found[df_affli_found['label_s'].str.lower()==affil_name.lower()],
+						df_affli_found[df_affli_found['label_s'].str.lower()=='{} [{}]'.format(affil_name.lower(), affil_city.lower())],	  
+						df_affli_found[df_affli_found['label_s'].str.lower()=='{} system'.format(affil_name.lower())]
+						])
+				else:
+					df_exact = pd.concat([
+						df_affli_found[df_affli_found['label_s'].str.lower()==affil_name.lower()],	  
+						df_affli_found[df_affli_found['label_s'].str.lower()=='{} system'.format(affil_name.lower())]
+						])
+				
+				if not df_exact.empty:
+					return return_callback_func(True, df_exact.iloc[0].to_dict(), affil_name)
+				
+				# If less than three affiliation remains, take it. Otherwise, return not found.
+				if len(df_affli_found) <= 3:
+					affi_exist_in_hal = True
+					best_affil_dict = df_affli_found.iloc[0].to_dict()
+
+					return return_callback_func(affi_exist_in_hal, best_affil_dict, affil_name)
+				else:
+					return return_callback_func()	
+			else:
+				return return_callback_func()
+
+
 		def parse_authors():
 			''' Parse authors element.
 			'''
@@ -827,6 +1090,168 @@ class automate_hal:
 			eListOrg = root.find('tei:text/tei:back/tei:listOrg', ns)
 			eOrg = root.find('tei:text/tei:back/tei:listOrg/tei:org', ns)
 			eListOrg.remove(eOrg)
+
+			## Sub-function definitions for handling affiliations.
+					
+			# Define a subfuntion to add a new affiliation.
+			def add_new_affiliation(new_affiliation_idx, new_affliation, aut_affil):
+				'''
+				This is a subfunction that create a new affiliation. First it will check if the affiliation already exists as a local structure.
+				If yes, it will directly refer to that. If no, it will create a new one.
+
+				Parameters:
+				- new_affiliation_idx (int): The index of the new affiliation.
+				- new_affliation (list): The list of new affiliations.
+				- aut_affil (str): The affiliation of the author.
+
+				Returns:
+				- new_affiliation_idx (int): The index of the new affiliation.
+				- new_affliation (list): The list of new affiliations.		
+
+				'''
+
+				# Dealing with special characters:
+				aut_affil = re.sub(r'&amp;', '& ', aut_affil)
+
+				# If it is the first new affiliation, create directly.
+				if new_affiliation_idx == 0:
+					new_affiliation_idx += 1 # Update the index.
+					# Create the new organization.
+					eBackOrg_i = ET.SubElement(eListOrg, 'org')
+					eBackOrg_i.set('type', 'institution')
+					eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
+					eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
+					eBackOrg_i_name.text = aut_affil
+					new_affliation.append(aut_affil)
+					# Make reference to the created affliation.
+					eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+					eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+				else: # If it is not the first new affiliation, search if it has been created by us before.
+					try:
+						idx = new_affliation.index(aut_affil)
+						# If it has been created, make reference to it.
+						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+						eAffiliation_manual.set('ref', 'localStruct-' + str(idx+1))	
+					except ValueError: # If not created, create a new one.
+						# Update the index.
+						new_affiliation_idx += 1
+						# Create the new organization.
+						eBackOrg_i = ET.SubElement(eListOrg, 'org')
+						eBackOrg_i.set('type', 'institution')
+						eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
+						eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
+						eBackOrg_i_name.text = aut_affil
+						new_affliation.append(aut_affil)	
+						# Make reference to the created affliation.
+						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+						eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+
+				return new_affiliation_idx, new_affliation
+			
+
+			# Sub-functions supporting parsing affiliations.
+			def add_affiliation_by_affil_id(eAuth, affil_id):
+				''' 
+				If affiliation_id is provided in authDB: Use them directly to create a section for affiliation in the tei-xml tree.
+
+				Parameters: 
+				- eAuth (ET.Element): The element to which the 'affiliation' element will be added. 
+				- affil_id (str): The id of the affiliation to be added. 
+
+				Returns: None
+				'''
+
+				# Define a subfunction for adding the affiliation element in the xml tree.
+				def add_subelement_for_affil_id(eAuth, affil_id):
+					eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
+					eAffiliation_i.set('ref', '#struct-' + affil_id)
+
+					# For debugging onle: Print also affiliation name.
+					# Remove this after debugging!						
+					if self.debug_mode and not self.upload_to_hal:
+						try:
+							search_result = self.reqHalRef(ref_name='structure', 
+										value='(docid:{})'.format(affil_id), 
+										return_field='&fl=label_s&wt=json')
+							eAffiliation_i.set('name', search_result[1][0]['label_s'])
+						except:
+							pass
+					
+
+				# Check if 'affiliation' subelement exists
+				existing_affiliations = eAuth.findall('affiliation')
+
+				if existing_affiliations:
+					# 'affiliation' subelement exists
+					found_matching_affiliation = False
+
+					# Check if any existing 'affiliation' has the same affil_id
+					for affiliation in existing_affiliations:
+						if 'ref' in affiliation.attrib and affiliation.attrib['ref'] == '#struct-' + affil_id:
+							found_matching_affiliation = True
+							# print(f"Matching 'affiliation' found with affil_id {affil_id}: {affiliation}")
+							break
+
+					if not found_matching_affiliation:
+						# No matching 'affiliation' found, create a new one
+						add_subelement_for_affil_id(eAuth, affil_id)
+						# print(f"New 'affiliation' created with affil_id {affil_id}: {eAffiliation_i}")
+				else:
+					# 'affiliation' subelement does not exist, create a new one
+					add_subelement_for_affil_id(eAuth, affil_id)
+					# print(f"New 'affiliation' created with affil_id {affil_id}: {eAffiliation_i}")
+
+
+			# Define a function to check if the matched affiliation has parent affiliation.
+			def add_affil_and_parent_affil(affil_dict, eAuth):
+				affil_ids = []
+				affil_ids.append(affil_dict['docid'])
+				if 'parentValid_s' in affil_dict and 'parentDocid_i' in affil_dict:
+					try:
+						for idx, parent_id in enumerate(affil_dict['parentDocid_i']):
+							if affil_dict['parentValid_s'][idx]=='VALID':
+								affil_ids.append(parent_id)
+					except:
+						pass
+
+				# Create a new 'affiliation' element under the 'eAuth' element
+				for affil_id in affil_ids:
+					add_affiliation_by_affil_id(eAuth=eAuth, affil_id=affil_id)							
+			
+
+			# Subfunction to transform a country name to its abbreviation.
+			def generate_abbreviation(country_name):
+					country = None
+					if country_name:
+						try:
+							country = pycountry.countries.search_fuzzy(country_name)[0]
+							country = country.alpha_2.lower()						
+						except LookupError:
+							pass
+						
+					return country
+					
+			
+			# Defuzzy affiliation names.
+			def defuzzy_affil_name(affil_name):
+				affil_name = unidecode(affil_name).lower()
+
+				replacements = [
+					('electricite de france (edf)', 'edf'),
+					('laboratoire genie industriel (lgi)', 'lgi'),
+					('mines paristech', 'mines paris - psl')
+					# Add more replacement pairs as needed
+				]
+
+				# Apply the replacements
+				output_string = affil_name
+				for old_str, new_str in replacements:
+					output_string = output_string.replace(old_str, new_str)
+
+				return output_string
+			
+				
+			# Start handling the affiliations.
 
 			# Reset new affiliation index and list.
 			new_affiliation_idx = 0
@@ -859,411 +1284,6 @@ class automate_hal:
 				if aut['idHAL'] : 
 					idHAL = ET.SubElement(eAuth,'idno', {'type':'idhal'})
 					idHAL.text = aut['idHAL']
-
-
-				# Sub-function definitions for handling affiliations.
-					
-				# Define a subfuntion to add a new affiliation.
-				def add_new_affiliation(new_affiliation_idx, new_affliation, aut_affil):
-					'''
-					This is a subfunction that create a new affiliation. First it will check if the affiliation already exists as a local structure.
-					If yes, it will directly refer to that. If no, it will create a new one.
-
-					Parameters:
-					- new_affiliation_idx (int): The index of the new affiliation.
-					- new_affliation (list): The list of new affiliations.
-					- aut_affil (str): The affiliation of the author.
-
-					Returns:
-					- new_affiliation_idx (int): The index of the new affiliation.
-					- new_affliation (list): The list of new affiliations.		
-
-					'''
-
-					# Dealing with special characters:
-					aut_affil = re.sub(r'&amp;', '& ', aut_affil)
-
-					# If it is the first new affiliation, create directly.
-					if new_affiliation_idx == 0:
-						new_affiliation_idx += 1 # Update the index.
-						# Create the new organization.
-						eBackOrg_i = ET.SubElement(eListOrg, 'org')
-						eBackOrg_i.set('type', 'institution')
-						eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
-						eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
-						eBackOrg_i_name.text = aut_affil
-						new_affliation.append(aut_affil)
-						# Make reference to the created affliation.
-						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-						eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
-					else: # If it is not the first new affiliation, search if it has been created by us before.
-						try:
-							idx = new_affliation.index(aut_affil)
-							# If it has been created, make reference to it.
-							eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-							eAffiliation_manual.set('ref', 'localStruct-' + str(idx+1))	
-						except ValueError: # If not created, create a new one.
-							# Update the index.
-							new_affiliation_idx += 1
-							# Create the new organization.
-							eBackOrg_i = ET.SubElement(eListOrg, 'org')
-							eBackOrg_i.set('type', 'institution')
-							eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
-							eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
-							eBackOrg_i_name.text = aut_affil
-							new_affliation.append(aut_affil)	
-							# Make reference to the created affliation.
-							eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-							eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
-
-					return new_affiliation_idx, new_affliation
-				
-
-				# Sub-functions supporting parsing affiliations.
-				def add_affiliation_by_affil_id(eAuth, affil_id):
-					''' 
-					If affiliation_id is provided in authDB: Use them directly to create a section for affiliation in the tei-xml tree.
-
-					Parameters: 
-					- eAuth (ET.Element): The element to which the 'affiliation' element will be added. 
-					- affil_id (str): The id of the affiliation to be added. 
-
-					Returns: None
-					'''
-
-					# Define a subfunction for adding the affiliation element in the xml tree.
-					def add_subelement_for_affil_id(eAuth, affil_id):
-						eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-						eAffiliation_i.set('ref', '#struct-' + affil_id)
-
-						# For debugging onle: Print also affiliation name.
-						# Remove this after debugging!						
-						if self.debug_mode and not self.upload_to_hal:
-							try:
-								search_result = self.reqHalRef(ref_name='structure', 
-											value='(docid:{})'.format(affil_id), 
-											return_field='&fl=label_s&wt=json')
-								eAffiliation_i.set('name', search_result[1][0]['label_s'])
-							except:
-								pass
-						
-
-					# Check if 'affiliation' subelement exists
-					existing_affiliations = eAuth.findall('affiliation')
-
-					if existing_affiliations:
-						# 'affiliation' subelement exists
-						found_matching_affiliation = False
-
-						# Check if any existing 'affiliation' has the same affil_id
-						for affiliation in existing_affiliations:
-							if 'ref' in affiliation.attrib and affiliation.attrib['ref'] == '#struct-' + affil_id:
-								found_matching_affiliation = True
-								# print(f"Matching 'affiliation' found with affil_id {affil_id}: {affiliation}")
-								break
-
-						if not found_matching_affiliation:
-							# No matching 'affiliation' found, create a new one
-							add_subelement_for_affil_id(eAuth, affil_id)
-							# print(f"New 'affiliation' created with affil_id {affil_id}: {eAffiliation_i}")
-					else:
-						# 'affiliation' subelement does not exist, create a new one
-						add_subelement_for_affil_id(eAuth, affil_id)
-						# print(f"New 'affiliation' created with affil_id {affil_id}: {eAffiliation_i}")
-
-
-				# Define a function to check if the matched affiliation has parent affiliation.
-				def add_affil_and_parent_affil(affil_dict, eAuth):
-					affil_ids = []
-					affil_ids.append(affil_dict['docid'])
-					if 'parentValid_s' in affil_dict and 'parentDocid_i' in affil_dict:
-						try:
-							for idx, parent_id in enumerate(affil_dict['parentDocid_i']):
-								if affil_dict['parentValid_s'][idx]=='VALID':
-									affil_ids.append(parent_id)
-						except:
-							pass
-
-					# Create a new 'affiliation' element under the 'eAuth' element
-					for affil_id in affil_ids:
-						add_affiliation_by_affil_id(eAuth=eAuth, affil_id=affil_id)
-
-
-				# Define a function to sort df_affli_found based on the number of words in the affliation name.
-				def sort_by_name_length(df):																			
-					# Function to calculate the number of words in a string
-					def count_words(text):
-						return len(text.split())										
-					# Add a new column 'word_count' with the number of words in 'label_s'
-					df['word_count'] = df['label_s'].apply(count_words)
-					# Sort the DataFrame based on the 'word_count' column
-					df_sorted = df.sort_values(by='word_count').reset_index(drop=True)
-					# Drop the 'word_count' column if you don't need it in the final result
-					df_sorted = df_sorted.drop(columns='word_count')
-
-					return df_sorted
-				
-
-				# Define a function to pick the affiliation in HAL, based on the search result.
-				
-				def pick_affiliation_in_hal(search_result, affil_country, affil_city, affil_name, parent_affil_id):
-					'''
-					This function checks the results from HAL and pick the best-matched affiliation. It will create a section based on the accociated affiliation id in the xml tree.
-					
-					Parameters:
-						- search_result (list): The result from HAL search.
-						- affil_city (str): The city of the affiliation to be added.
-						- parent_affil_id (str): The id of the parent affiliation.  
-
-					Return:
-						- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False. 
-						- best_match_affil_id (str): The dict of the best match affiliation.
-					'''
-
-					# Subfunction defintions.
-
-					# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
-					# We count the number of parent institutions. If too many, this indicates that it is better to look at parent affiliations.
-					def check_affil_city(df_affli_found, affil_city):
-						'''
-						Given an input DataFrame of possible affiliations, find the best match for the specified pattern. 
-
-						Parameters:
-							- df_affli_found (pd.DataFrame): The DataFrame of possible affiliations.
-							- affil_city (str): The city of the affiliation to be added. 
-
-						Return:
-							- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False.
-							- affil_dict (dict): A dictionary of the affiliation of the best match found.
-						'''
-
-						if not df_affli_found.empty:
-							# Check if the 'label_s' column contains the specified pattern: '[Location]'
-							pattern = "[{}]".format(affil_city)
-							# Check if 'contains_pattern' column exists, if not, create it
-							if 'contains_pattern' not in df_affli_found.columns:
-								df_affli_found['contains_pattern'] = False  
-
-							# Condition 1: XXX [Location] in affilication name
-							condition_1 = df_affli_found['label_s'].str.contains(pattern, regex=False)
-
-							# Conditino 2: Address contains the city
-							# Custom function to clean and format the address
-							def clean_and_format_address(address):
-								output = ''
-								if pd.notna(address):
-									address = unidecode(address)								
-									cleaned_address = re.sub(r'[^a-zA-Z0-9 ]', ' ', address)  # Keep only letters and numbers
-									output = cleaned_address.lower()
-								
-								return output
-							
-							if 'address_s' in df_affli_found.columns:
-								df_affli_found['cleaned address_s'] = df_affli_found['address_s'].apply(clean_and_format_address)
-								condition_2 = df_affli_found['cleaned address_s'].str.contains(clean_and_format_address(affil_city), regex=False)
-							else:
-								condition_2 = condition_1
-
-							df_affli_found.loc[:, 'contains_pattern'] = condition_1 | condition_2
-
-							df_affli_found = df_affli_found[df_affli_found.loc[:, 'contains_pattern']]
-							
-						return df_affli_found
-					
-
-					def check_university_group(df_affli_found):
-						'''
-						Check if an affiliation in df_affil_found is the parent of others in df_affil_found.
-						If so, we could choose the parent as the affiliation of the author.
-
-						Parameters:
-							- df_affli_found: Pandas DataFrame, the dataframe of the affiliation found in the database.
-						Return:
-							- bool, True if the affiliation is the parent of others in df_affli_found, False otherwise.
-						'''
-
-						# Function to check if docid is in parentDocid or parentDocid is NaN
-						def check_membership(row):
-							docid = row['docid']
-							other_rows = df_affli_found[df_affli_found.index != row.name]  # Exclude the current row
-
-							flag = []
-							for _, other_row in other_rows.iterrows():
-								try:
-									flag.append(docid in other_row['parentDocid_i'])
-								except:
-									flag.append(False)
-							
-							return any(flag)
-
-
-						affi_exist_in_hal = False
-						affil_dict = {}
-
-						if not df_affli_found.empty:
-							# Apply the function to create the 'university_group' column
-							university_group = []
-							for i in range(len(df_affli_found)):
-								university_group.append(check_membership(df_affli_found.iloc[i]))
-							df_affli_found['university_group'] = university_group
-
-							if any(df_affli_found['university_group']):
-								affil_dict = df_affli_found[df_affli_found['university_group']].iloc[0].to_dict()
-								affi_exist_in_hal = True
-
-						return affi_exist_in_hal, affil_dict
-					
-
-					def return_callback_func(affi_exist_in_hal=False, best_affil_dict={}, affil_name=''):					
-						# Final check: The affiliation name should not be too different from the original name.
-						if affi_exist_in_hal:
-							result_name = unidecode(best_affil_dict['label_s']).lower()
-							affil_name = unidecode(affil_name).lower()
-							result_words = result_name.split()
-							affil_words = affil_name.split()
-							difference = abs(len(result_words) - len(affil_words))
-
-							if difference > 3 and not '[{}]'.format(affil_name) in result_name:
-								affi_exist_in_hal=False
-								best_affil_dict={}
-							
-												
-						# Return the callback function
-						return affi_exist_in_hal, best_affil_dict
-					
-
-					# End of subfunction definition. Start execution.
-
-					if search_result[0] > 0:
-						# Create a dataframe to get all the found affliations.
-						for i in range(len(search_result[1])):
-							if i == 0:
-								df_affli_found = pd.DataFrame([search_result[1][i]])
-							else:
-								df_affli_found = pd.concat([df_affli_found, pd.DataFrame([search_result[1][i]])], ignore_index=True)
-
-						# If the current parent affil list is not empty:
-						if len(parent_affil_id) > 0:
-							# If we have already some parent affils, we need to first screen the candidate results to remove 
-							# those with different parent affil ids.
-							if 'parentDocid_i' in df_affli_found.columns:
-								# Filter rows based on the condition (including NaN values and handling comma-separated values)
-								tmp_df_1 = df_affli_found[pd.isna(df_affli_found['parentDocid_i'])]
-								tmp_df_1[tmp_df_1['label_s'].apply(unidecode).str.lower()==unidecode(affil_name).lower()]
-								tmp_df_2 = df_affli_found[pd.notna(df_affli_found['parentDocid_i'])]
-								tmp_df_2 = tmp_df_2[tmp_df_2['parentDocid_i'].apply(lambda x: any(item in parent_affil_id for item in x))]
-								df_affli_found = pd.concat([tmp_df_1, tmp_df_2])
-								
-								# If after the operation, no affiliation left: Return directly.
-								if df_affli_found.empty:
-									return return_callback_func()
-
-						# Search logic: We first identify the affiliation name with the pattern Name + [Location].
-						# If not found, we use the one with the shortest name.
-						
-						# # Sort by name lengh.
-						# df_affli_found = sort_by_name_length(df=df_affli_found)
-
-						# Check if the input affil name is an acronym.
-						# If yes, only consider the items that contain the full name.
-						flag = df_affli_found['label_s'].str.lower().str.contains('[{}]'.format(affil_name.lower()), regex=False)
-						if any(flag):
-							df_affli_found = df_affli_found[flag]
-
-						# # Keep only the affiliations that starts with the required name:
-						# df_without_accent = df_affli_found['label_s'].apply(unidecode).str.lower()
-						# df_affli_found = df_affli_found[df_without_accent.str.startswith(
-						# 	unidecode(affil_name[0].lower()))]
-						
-						# If after the operation, no affiliation left: Return directly.
-						if df_affli_found.empty:
-							return return_callback_func()
-						
-						# The affiliation country needs to match.
-						if affil_country:
-							try:
-								df_affli_found = df_affli_found[df_affli_found['country_s']==affil_country]
-							except:
-								pass
-
-						# If after the operation, no affiliation left: Return directly.
-						if df_affli_found.empty:
-							return return_callback_func()									
-						
-						# If the affiliation name ends with [Location], pick the one that matches the actual location.
-						df_affli_found = check_affil_city(df_affli_found, affil_city)
-						# If after the operation, no affiliation left: Return directly.
-						if df_affli_found.empty:
-							return return_callback_func()	
-						
-						# # Check if an university group exists
-						# affi_exist_in_hal, best_affil_dict = check_university_group(df_affli_found)
-						# if affi_exist_in_hal:
-						# 	return return_callback_func(affi_exist_in_hal, best_affil_dict, affil_name)
-						
-						# Check in the remaining candidates, if the authors appeared in HAL with the candidate affiliation before.
-						flag = []
-						for i in range(len(df_affli_found)):
-							field = 'structId_i:{}&fq=auth_t:"{} {}"'.format(df_affli_found.iloc[i]['docid'], aut['forename'], aut['surname'])
-							num, _ = self.reqHal(field=field)
-							flag.append(num>0)
-						if any(flag):
-							df_affli_found = df_affli_found[flag]
-							
-							affi_exist_in_hal = True
-							best_affil_dict = df_affli_found.iloc[0].to_dict()
-
-							return return_callback_func(affi_exist_in_hal, best_affil_dict, affil_name)
-						
-						# If only one affiliation remains, take it. Otherwise, return not found.
-						if len(df_affli_found) == 1:
-							affi_exist_in_hal = True
-							best_affil_dict = df_affli_found.iloc[0].to_dict()
-
-							return return_callback_func(affi_exist_in_hal, best_affil_dict, affil_name)
-						else:
-							return_callback_func()	
-					else:
-						# Default: Not match.
-						affi_exist_in_hal = False
-						best_affil_dict = {}
-				
-					return return_callback_func(affi_exist_in_hal, best_affil_dict, affil_name)
-				
-
-				# Subfunction to transform a country name to its abbreviation.
-				def generate_abbreviation(country_name):
-						country = None
-						if country_name:
-							try:
-								country = pycountry.countries.search_fuzzy(country_name)[0]
-								country = country.alpha_2.lower()						
-							except LookupError:
-								pass
-							
-						return country
-						
-				
-				# Defuzzy affiliation names.
-				def defuzzy_affil_name(affil_name):
-					affil_name = unidecode(affil_name).lower()
-
-					replacements = [
-						('electricite de france (edf)', 'edf'),
-						('laboratoire genie industriel (lgi)', 'lgi'),
-						('mines paristech', 'mines paris - psl')
-						# Add more replacement pairs as needed
-					]
-
-					# Apply the replacements
-					output_string = affil_name
-					for old_str, new_str in replacements:
-						output_string = output_string.replace(old_str, new_str)
-
-					return output_string
-
-
-				# Start handling the affiliations.
 					
 				# if affili_id is provided in authDB: Use them directly.
 				if aut['affil_id']:
@@ -1278,6 +1298,30 @@ class automate_hal:
 						aut_affils = ['Unknown']
 					affil_countries = aut['affil_country']
 					affli_cities = aut['affil_city']
+					author_name = {'forename': aut['forename'], 'surname': aut['surname']}
+
+					aut_affils_ori = copy.deepcopy(aut_affils)
+					# For french affiliations: Create a new affilation by replacing "university" to "universite"
+					for index in range(len(aut_affils)):
+						aut_affil = aut_affils[index]						
+						affil_country = generate_abbreviation(affil_countries[index])
+						affil_city = affli_cities[index]
+						if affil_country == 'fr' or affil_country == '':
+							if 'university' in aut_affil.lower():
+								new_aut_affil = aut_affil.lower().replace('university', 'universite')
+								aut_affils[index] += ', ' + new_aut_affil
+
+						# If aut_affil contains acronym, extract the acronym.
+						# Define a regular expression pattern to match "(XXX)"
+						pattern = r'\((\w+)\)'
+						# Use re.search to find the pattern in the string
+						match = re.search(pattern, aut_affil)
+						# Check if the pattern is found
+						if match:
+							# Extract the content inside the parentheses
+							affi_acronym = match.group(1)
+							aut_affils[index] += ', ' + affi_acronym
+
 
 					# Loop for all the affliations from one author.						
 					for index, aut_affil in enumerate(aut_affils):
@@ -1313,13 +1357,13 @@ class automate_hal:
 							# Search for the valid affliations in HAL.
 							try:
 								search_result = self.reqHalRef(ref_name='structure', 
-											value='(text:"{}" valid_s:"VALID")'.format(affil_unit), 
+											value='(text:({}) valid_s:"VALID")'.format(affil_unit), 
 											return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
 							except:
 								search_result = [0]
 								pass							
 							# Get the best-matched one and add it to the xml-tree.
-							affi_unit_exist_in_hal, affil_dict = pick_affiliation_in_hal(search_result, affil_country, affil_city, affil_name=affil_unit, parent_affil_id=parent_affil_id)
+							affi_unit_exist_in_hal, affil_dict = pick_affiliation_in_hal(search_result, affil_country, affil_city, aut=author_name, affil_name=affil_unit, parent_affil_id=parent_affil_id)
 							# If found, add to the xml tree.
 							if affi_unit_exist_in_hal:
 								parent_affil_id.append(affil_dict['docid'])
@@ -1337,13 +1381,14 @@ class automate_hal:
 								# Search for the valid affliations in HAL.
 								try:
 									# Here we don't require that the affiliation in HAL is valid.
+									aut_affil = aut_affils_ori[index]
 									search_result = self.reqHalRef(ref_name='structure', 
 												value='(text:"{}")'.format(aut_affil), 
 												return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
 								except:
 									search_result = [0]
 									pass
-								affi_exist_in_hal, affil_dict = pick_affiliation_in_hal(search_result, affil_country=None, affil_city='', affil_name=aut_affil, parent_affil_id=parent_affil_id)
+								affi_exist_in_hal, affil_dict = pick_affiliation_in_hal(search_result, affil_name=aut_affil, invalide_affil=True)
 								if not affi_exist_in_hal:
 									new_affiliation_idx, new_affliation = add_new_affiliation(new_affiliation_idx, new_affliation, aut_affil) 
 								else: # If invalid affiliation exist in HAL.

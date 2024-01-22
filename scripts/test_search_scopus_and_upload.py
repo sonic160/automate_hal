@@ -13,11 +13,11 @@ if __name__ == '__main__':
     # search_query = 'AU-ID(56609542700) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Yanfu Li
     # search_query = 'AU-ID(14049106600) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Nicola Pedroni
     # search_query = 'AU-ID(7102745133) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Anne Barros
-    search_query = 'EID (2-s2.0-85125731304)'
+    search_query = 'EID (2-s2.0-85172788020)'
 
     results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
     df_result = pd.DataFrame(results.results)
-    df_result.to_csv('./data/outputs/scopus_search_results.csv', index=False)
+    # df_result.to_csv('./data/outputs/scopus_search_results.csv', index=False)
 
     # df_result = pd.read_csv('./data/outputs/scopus_search_results.csv')
 
@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     # For debugging: Only upload the first rowRange records.
     # Comment this line if you want to upload all the records.
-    rowRange=[0, 200]
+    # rowRange=[2, 200]
     auto_hal.debug_mode = True
     auto_hal.upload_to_hal = False
 
