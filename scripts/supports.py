@@ -1015,8 +1015,9 @@ class automate_hal:
 				df_affli_found = sort_by_name_length(df=df_affli_found)
 
 				# Take maximal 40 records.
-				if len(df_affli_found) > 40:
+				if len(df_affli_found) > 30:
 					df_affli_found = df_affli_found.iloc[:40, :]
+					# return return_callback_func()
 
 				# Check if the input affil name is an acronym.
 				# If yes, only consider the items that contain the full name.
@@ -1051,18 +1052,20 @@ class automate_hal:
 					return return_callback_func()
 				
 				# If there is exact matched affil name:
+				df_exact = df_affli_found[df_affli_found['label_s'].str.lower()==affil_name.lower()]
+				# affil name [XXX]
+				pattern = re.compile(r'{} \[.*\]'.format(affil_name.lower()))
+				df_exact = pd.concat([
+					df_exact,
+					df_affli_found[[element is not None for element in df_affli_found['label_s'].str.lower().apply(pattern.match)]]
+				])
+				# affil name [City name]
 				if pd.notna(affil_city):
 					df_exact = pd.concat([
-						df_affli_found[df_affli_found['label_s'].str.lower()==affil_name.lower()],
-						df_affli_found[df_affli_found['label_s'].str.lower()=='{} [{}]'.format(affil_name.lower(), affil_city.lower())],	  
-						df_affli_found[df_affli_found['label_s'].str.lower()=='{} system'.format(affil_name.lower())]
+							df_exact,
+							df_affli_found[df_affli_found['label_s'].str.lower()=='{} [{}]'.format(affil_name.lower(), affil_city.lower())],	  
 						])
-				else:
-					df_exact = pd.concat([
-						df_affli_found[df_affli_found['label_s'].str.lower()==affil_name.lower()],	  
-						df_affli_found[df_affli_found['label_s'].str.lower()=='{} system'.format(affil_name.lower())]
-						])
-				
+							
 				if not df_exact.empty:
 					return return_callback_func(True, df_exact.iloc[0].to_dict(), affil_name)
 				
@@ -1233,22 +1236,66 @@ class automate_hal:
 					
 			
 			# Defuzzy affiliation names.
-			def defuzzy_affil_name(affil_name):
-				affil_name = unidecode(affil_name).lower()
+			def defuzzy_affil_name(aut_affils, index):
+				affil_name = aut_affils[index]
 
 				replacements = [
-					('electricite de france (edf)', 'edf'),
-					('laboratoire genie industriel (lgi)', 'lgi'),
-					('mines paristech', 'mines paris - psl')
+					('electricite de france', 'edf'),
+					('mines paristech', 'mines paris - psl'),
+					('ecole ', ''),
+					('randd', 'r d')
 					# Add more replacement pairs as needed
 				]
 
 				# Apply the replacements
-				output_string = affil_name
+				output_string = unidecode(affil_name).lower()
 				for old_str, new_str in replacements:
 					output_string = output_string.replace(old_str, new_str)
 
+				aut_affils[index] = output_string
+
 				return output_string
+			
+
+			def enrich_affil_name(aut_affils, index, affil_country):
+				'''
+				If some criteria are met, generate another item based on the current affiliation name.
+				Examples:
+				- If the affiliation name contains 'university' and it is a french institute, add 'universite'.
+				- If the affiliation name contains an acronym in the format of (acronym), add the acronym.
+
+				Parameters:
+				- aut_affils (list): A list of author affiliations.
+				- index (int): The index of the current affiliation.
+				- affil_country (str): The country of the current affiliation.
+
+				Returns:
+				- aut_affil (str): The new affiliation name.
+
+				'''
+				aut_affil = aut_affils[index]
+				if affil_country == 'fr' or affil_country == '':
+					if 'university' in aut_affil.lower():
+						index_university = aut_affil.lower().find('university')
+						index_comma = aut_affil.lower().find(',', index_university)
+						old_aut_affil = aut_affil.lower()[index_university:index_comma].strip()
+						new_aut_affil = old_aut_affil.replace('university', 'universite')
+						new_aut_affil = new_aut_affil.replace('of', '')
+						aut_affils[index] += ', ' + new_aut_affil
+
+				# If aut_affil contains acronym, extract the acronym.
+				# Define a regular expression pattern to match "(XXX)"
+				pattern = r'\((\w+)\)'
+				# Use re.search to find the pattern in the string
+				match = re.search(pattern, aut_affil)
+				# Check if the pattern is found
+				if match:
+					# Extract the content inside the parentheses
+					affi_acronym = match.group(1)
+					aut_affils[index] = aut_affils[index].replace(' ({})'.format(affi_acronym), '')
+					aut_affils[index] += ', ' + affi_acronym
+
+				return aut_affil
 			
 				
 			# Start handling the affiliations.
@@ -1302,26 +1349,15 @@ class automate_hal:
 
 					aut_affils_ori = copy.deepcopy(aut_affils)
 					# For french affiliations: Create a new affilation by replacing "university" to "universite"
-					for index in range(len(aut_affils)):
-						aut_affil = aut_affils[index]						
+					for index in range(len(aut_affils)):												
 						affil_country = generate_abbreviation(affil_countries[index])
-						affil_city = affli_cities[index]
-						if affil_country == 'fr' or affil_country == '':
-							if 'university' in aut_affil.lower():
-								new_aut_affil = aut_affil.lower().replace('university', 'universite')
-								aut_affils[index] += ', ' + new_aut_affil
-
-						# If aut_affil contains acronym, extract the acronym.
-						# Define a regular expression pattern to match "(XXX)"
-						pattern = r'\((\w+)\)'
-						# Use re.search to find the pattern in the string
-						match = re.search(pattern, aut_affil)
-						# Check if the pattern is found
-						if match:
-							# Extract the content inside the parentheses
-							affi_acronym = match.group(1)
-							aut_affils[index] += ', ' + affi_acronym
-
+						affil_city = affli_cities[index]						
+						
+						# Defuzzy affili_unit.
+						aut_affil = defuzzy_affil_name(aut_affils, index)
+						# Enrich the affiliation name.
+						aut_affil = enrich_affil_name(aut_affils, index, affil_country)
+						
 
 					# Loop for all the affliations from one author.						
 					for index, aut_affil in enumerate(aut_affils):
@@ -1339,20 +1375,21 @@ class automate_hal:
 						aut_affil_list = aut_affil.split(', ')
 
 						# Rearrange the order of the parts.
-						keywords_to_move_last = ['university']
+						keywords_to_move_last = ['university', 'universite']
 						for keyword in keywords_to_move_last:
 							for part in aut_affil_list:
 								if keyword in part.lower():
 									aut_affil_list.remove(part)
 									aut_affil_list.append(part)
+						
+						# In case "department of law, order, and XXX", this will generate too many items.
+						if len(aut_affil_list)>=6:
+							aut_affil_list = aut_affil_list[-1:]
 
 						# Start to search from the right-most unit (largest):
 						parent_affil_id = [] # Store all the parent affiliations. Use to exclude child affilation with the same name.
 						for affil_unit in reversed(aut_affil_list):						            											
 							affi_unit_exist_in_hal = False
-
-							# Defuzzy affili_unit.
-							affil_unit = defuzzy_affil_name(affil_unit)
 
 							# Search for the valid affliations in HAL.
 							try:

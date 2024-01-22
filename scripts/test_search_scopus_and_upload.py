@@ -13,7 +13,7 @@ if __name__ == '__main__':
     # search_query = 'AU-ID(56609542700) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Yanfu Li
     # search_query = 'AU-ID(14049106600) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Nicola Pedroni
     # search_query = 'AU-ID(7102745133) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Anne Barros
-    search_query = 'EID (2-s2.0-85172788020)'
+    search_query = 'EID (2-s2.0-85165459332)'
 
     results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
     df_result = pd.DataFrame(results.results)
