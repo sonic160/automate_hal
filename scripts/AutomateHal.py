@@ -495,11 +495,9 @@ class SearchAffilFromHal(PaperInformationTreatment):
 								affil_country = affil_dict['country_s']
 
 							# Save the results to self.auths.
-							if self.auths[auth_idx]['affil_id'] == '':
-								self.auths[auth_idx]['affil_id'] = str(affil_dict['docid'])
-							else:
-								self.auths[auth_idx]['affil_id'] += ', {}'.format(affil_dict['docid'])						
-					
+							self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+											   field_name='affil_id', field_value=affil_dict['docid'])
+							
 					# If the affiliation does not exist in HAL, add the affiliation manually.
 					# If the affiliation is France, do not create new affiliation as HAL is used for evaluating affiliations, 
 					# so there is a stricker rule regarding creating affiliations.
@@ -520,15 +518,14 @@ class SearchAffilFromHal(PaperInformationTreatment):
 							
 							# If exist in HAL but not valid.
 							if affi_exist_in_hal:
-								if self.auths[auth_idx]['affil_id_invalid']:
-									self.auths[auth_idx]['affil_id_invalid'] = str(affil_dict['docid'])
-								else:
-									self.auths[auth_idx]['affil_id_invalid'] += ', {}'.format(affil_dict['docid'])
-								continue
+								self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+											   field_name='affil_id_invalid', field_value=affil_dict['docid'])
 						
-					self.auths[auth_idx]['affil_exist_in_hal'].append(affi_exist_in_hal)
+					self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+											   field_name='affil_exist_in_hal', field_value=affi_exist_in_hal)
 					if not affi_exist_in_hal:
-						self.auths[auth_idx]['affil_not_found_in_hal'].append(aut_affil)	
+						self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+											   field_name='affil_not_found_in_hal', field_value=aut_affil)				
 
 
 	# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
@@ -788,6 +785,28 @@ class SearchAffilFromHal(PaperInformationTreatment):
 	def return_callback_func(self, affi_exist_in_hal=False, best_affil_dict={}):													
 		# Return the callback function
 		return affi_exist_in_hal, best_affil_dict
+	
+
+	def update_auths_fields_affil_from_hal(self, auth_idx, field_name, field_value):
+		'''
+		Based on whether affiliations exist in HAL, update the related fields in self.auths.
+		'''
+		def update_string_field(auth_idx, field_name, field_value):
+			# Save the results to self.auths.
+			if self.auths[auth_idx][field_name] == '':
+				self.auths[auth_idx][field_name] = str(field_value)
+			else:
+				self.auths[auth_idx][field_name] += ', {}'.format(field_value)
+		
+
+		def update_list_field(auth_idx, field_name, field_value):
+			self.auths[auth_idx][field_name].append(field_value)
+
+
+		if field_name=='affil_id' or field_name=='affil_id_invalid':
+			update_string_field(auth_idx, field_name, field_value)
+		else:
+			update_list_field(auth_idx, field_name, field_value)		
 	
 
 	def pick_affiliation_from_search_results(self, search_result, affil_country='', affil_city='', affil_name='', aut='', parent_affil_id='', invalid_affil=False):
