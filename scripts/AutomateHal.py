@@ -53,6 +53,7 @@ class AutomateHal:
 		self.report_file = report_file
 		self.log_file = log_file
 		self.debug_log_file = debug_log_file
+		self.additional_logs = []
 
 		# Check mode:
 		if mode != 'search_query' and mode != 'csv':
@@ -132,13 +133,16 @@ class AutomateHal:
 			raise ValueError('Error while adding log entry: log_file must be a list!')
 		
 
-	def dump_log_files(self):
+	def dump_log_files(self, additional_logs=[], names_for_additional_logs=[]):
 		'''
 		Saves the logs to the output directory.
 		'''
 		# Define log files to be saved.
 		output_file_name = ['log.json', 'treatment summary.json', 'debug_log.json']
 		logs = [self.log_file, self.report_file, self.debug_log_file]
+
+		output_file_name.append(names_for_additional_logs)
+		logs.append(additional_logs)
 		
 		for idx, log in enumerate(logs):
 			json_file_path = '{}{}'.format(self.output_path, output_file_name[idx])
@@ -188,10 +192,18 @@ class AutomateHal:
 		paper_info_handler.extract_complementary_paper_information(ab)
 
 		# Search the affiliations in HAL and get the ids.
-		affiliation_finder_hal = SearchAffilFromHal(auths=paper_info_handler.auths)
-		affiliation_finder_hal.extract_author_affiliation_in_hal()
+		affiliation_finder_hal = SearchAffilFromHal(auths=paper_info_handler.auths, doc_information=paper_info_handler.doc_information,
+			mode=paper_info_handler.mode, debug_mode=paper_info_handler.debug_mode,
+			log_file=paper_info_handler.log_file, debug_log_file=paper_info_handler.debug_log_file)
+		
+		if not self.debug_mode:
+			affiliation_finder_hal.extract_author_affiliation_in_hal()
+		else:
+			affiliation_finder_hal.debug_show_search_steps = True
+			affiliation_finder_hal.extract_author_affiliation_in_hal()
 
-		if self.debug_mode:
+			self.additional_logs.append(affiliation_finder_hal.log_for_affil_unit)
+			affiliation_finder_hal.log_for_affil_unit = []
 			paper_info_handler.debug_affiliation_hal()
 
 
@@ -505,9 +517,15 @@ class PaperInformationTreatment(AutomateHal):
 		return False
 
 
-class SearchAffilFromHal(PaperInformationTreatment):
-	def __init__(self, auths=[]):
+class SearchAffilFromHal(AutomateHal):
+	def __init__(self, auths=[], doc_information={},
+			  mode='search_query', debug_mode=False, AuthDB=[], log_file = [], debug_log_file = []):
+		super().__init__(mode=mode, debug_mode=debug_mode, AuthDB=AuthDB, log_file=log_file, debug_log_file=debug_log_file)
+
 		self.auths = auths
+		self.doc_information = doc_information
+		self.debug_show_search_steps = False
+		self.log_for_affil_unit = []
 
 
 	def add_parent_affil_ids(self, auth_idx, affil_dict):
@@ -574,7 +592,7 @@ class SearchAffilFromHal(PaperInformationTreatment):
 
 					# Start to search from the right-most unit (largest):
 					for affil_unit in reversed(aut_affil_list):						            											
-						affi_unit_exist_in_hal = False
+						affi_unit_exist_in_hal = False											
 
 						# Search for the valid affliations in HAL.
 						try:
@@ -623,7 +641,8 @@ class SearchAffilFromHal(PaperInformationTreatment):
 							if affi_exist_in_hal:
 								self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
 											   field_name='affil_id_invalid', field_value=affil_dict['docid'])
-						
+
+					# Save data and logging.	
 					self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
 											   field_name='affil_exist_in_hal', field_value=affi_exist_in_hal)
 					if not affi_exist_in_hal:
@@ -845,6 +864,28 @@ class SearchAffilFromHal(PaperInformationTreatment):
 		return country
 	
 	
+	def log_filter_steps_for_affil_unit(self, df_affil_found, aut, affil_name, filter_step):
+		'''
+		If debug_show_search_steps is True, log the results after each filter.
+		'''
+		if self.debug_show_search_steps:
+			if isinstance(df_affil_found, dict):
+				df_affil_found = pd.DataFrame([df_affil_found])
+			
+			log_entry = {
+				'eid': self.doc_information['eid'],
+				'title': self.doc_information['title'],
+				'author': '{} {}'.format(aut['forename'], aut['surname']),
+				'affiliation_name': affil_name,
+				'filter step': filter_step,
+				'df_affil_found': df_affil_found.to_json(orient='records', lines=True),
+				'len(df_affil_found)': len(df_affil_found)
+			}
+			
+			self.log_for_affil_unit.append(log_entry)
+			
+
+
 	# Generate affiliation list.
 	def generate_affil_list(self, aut_affil):
 		# Seperate the different terms by ",".
@@ -940,11 +981,13 @@ class SearchAffilFromHal(PaperInformationTreatment):
 			# Preprocess df_affli_found['label_s'] and affil_name: Lower case and french words -> english words.
 			df_affli_found['label_s'] = df_affli_found['label_s'].apply(unidecode).str.lower()
 			affil_name = unidecode(affil_name).lower()
+			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'Original results after preprocessing')
 
 			# If used for invalid affiliations.
 			# Only check if it is an exact match.
 			if invalid_affil:
 				df_exact = df_affli_found[df_affli_found['label_s']==affil_name]
+				self.log_filter_steps_for_affil_unit(df_exact, aut, affil_name, 'Invalid affiliation id search')
 
 				if not df_exact.empty:
 					return self.return_callback_func(affi_exist_in_hal=True, best_affil_dict=df_exact.iloc[0].to_dict())
@@ -953,6 +996,7 @@ class SearchAffilFromHal(PaperInformationTreatment):
 				
 			# If the current parent affil list is not empty: Filter based on parent affiliations.
 			df_affli_found = self.filter_by_parent_affil(df_affli_found, parent_affil_id)
+			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_parent_affil')
 													
 			# Sort by name lengh.
 			df_affli_found = self.sort_by_name_length(df=df_affli_found)
@@ -966,13 +1010,16 @@ class SearchAffilFromHal(PaperInformationTreatment):
 			# Check if the input affil name is an acronym.
 			# If yes, only consider the items that contain the [Acronym].
 			df_affli_found = self.filter_by_acronym_pattern(df_affli_found, affil_name)
+			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_acronym_pattern')
 
 			# Remove the child affiliations in the list.
 			df_affli_found = self.filter_by_university_group(df_affli_found)
+			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_university_group')
 
 			# If in the remaining affiliations, the author has published before: Select the first one.
 			affi_exist_in_hal, best_affil_dict = self.filter_by_prev_publications(df_affli_found, aut)
-			if affi_exist_in_hal:				
+			if affi_exist_in_hal:
+				self.log_filter_steps_for_affil_unit(best_affil_dict, aut, affil_name, 'filter_by_prev_publications')				
 				return self.return_callback_func(affi_exist_in_hal, best_affil_dict)
 			
 			# # Keep only the affiliations that starts with the required name:
@@ -982,13 +1029,16 @@ class SearchAffilFromHal(PaperInformationTreatment):
 						
 			# Remove the rows when affil_country exists but do not match.
 			if affil_country:
-				df_affli_found = self.filter_by_country(df_affli_found, affil_country)					
+				df_affli_found = self.filter_by_country(df_affli_found, affil_country)
+				self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_country')					
 			
 			# Remove the rows when affil_city exists but do not match.
 			df_affli_found = self.filter_by_affil_city(df_affli_found, affil_city)
+			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_affil_city')
 						
 			# Find the different types of accepted matches.
 			df_exact = self.find_exact_match(df_affli_found, affil_name, affil_city)
+			self.log_filter_steps_for_affil_unit(df_exact, aut, affil_name, 'find_exact_match')
 
 			# Final evaluation.
 			# If there is an exact match, take it.			
@@ -1002,6 +1052,7 @@ class SearchAffilFromHal(PaperInformationTreatment):
 
 				return self.return_callback_func(affi_exist_in_hal, best_affil_dict)
 			else:
+				self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'final evaluation. Why did not match.')
 				return self.return_callback_func()	
 		else:
 			return self.return_callback_func()
@@ -1328,4 +1379,4 @@ if __name__ == '__main__':
 			auto_hal.dump_log_files()
 
 	# Save the log files.
-	auto_hal.dump_log_files()
+	auto_hal.dump_log_files(additional_logs=auto_hal.additional_logs, names_for_additional_logs='step_by_step_log.json')
