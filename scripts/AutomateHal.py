@@ -17,12 +17,12 @@ class AutomateHal:
 
 	'''
 
-	def __init__(self, perso_data_path='', author_db_path='', 
+	def __init__(self, perso_data_path='', author_db_path='', affil_db_path='',
 			  AuthDB='', mode='search_query', stamps=[], 
 			  debug_mode=False, upload_to_hal=True, 
 			  report_file=[], log_file=[], debug_log_file=[],
-			  affiliation_search_history=pd.DataFrame(columns=
-				['affil_name', 'status', 'valid_ids', 'invalid_ids'])):
+			  affiliation_db=pd.DataFrame(columns=
+				['affil_name', 'status', 'valid_ids', 'affil_names_valid', 'invalid_ids', 'affil_names_invalid)'])):
 		'''
 		Initialize the automate_hal object with HAL credentials, stamps, and loads valid authors' data.
 
@@ -56,18 +56,19 @@ class AutomateHal:
 		self.log_file = log_file
 		self.debug_log_file = debug_log_file
 		self.additional_logs = []
-		self.affiliation_search_history = affiliation_search_history
+		self.affiliation_db = affiliation_db
+		self.affiliation_db_exist = False
+		self.affil_db_path = affil_db_path
 
 		# Check mode:
 		if mode != 'search_query' and mode != 'csv':
 			raise ValueError('mode must be either "search_query" or "csv".')
 
 		# Load the personal credentials and author database.
-		if not perso_data_path=='' and not author_db_path=='':
-			self.load_data_and_initialize(perso_data_path, author_db_path)
+		self.load_data_and_initialize(perso_data_path, author_db_path, affil_db_path)
 
 
-	def load_data_and_initialize(self, perso_data_path, author_db_path):
+	def load_data_and_initialize(self, perso_data_path, author_db_path, affil_db_path):
 		"""
 		Loads local data, HAL credentials, and valid authors database.
 		Initializes CSV output for system log.
@@ -75,21 +76,37 @@ class AutomateHal:
 		Parameters:
 		- perso_data_path (str): Path to the personal data file.
 		- author_db_path (str): Path to the valid authors database file.
+		- affil_db_path (str): Path to the affiliation database file.
 
 		Returns: None
 		"""
 		# Load local data: path and personal data
-		with open(perso_data_path) as fh:
-			local_data = json.load(fh)
+		if not perso_data_path == '':
+			with open(perso_data_path) as fh:
+				local_data = json.load(fh)
 
-		# Get HAL credentials
-		self.hal_user_name = local_data.get("perso_login_hal")
-		self.hal_pswd = local_data.get("perso_mdp_hal")
+			# Get HAL credentials
+			self.hal_user_name = local_data.get("perso_login_hal")
+			self.hal_pswd = local_data.get("perso_mdp_hal")
 
 		# Load valid authors database
-		with open(author_db_path, 'r', encoding="utf-8") as auth_fh:
-			reader = csv.DictReader(auth_fh)
-			self.AuthDB = {row['key']: row for row in reader}
+		if not author_db_path == '':
+			with open(author_db_path, 'r', encoding="utf-8") as auth_fh:
+				reader = csv.DictReader(auth_fh)
+				self.AuthDB = {row['key']: row for row in reader}
+
+		# Load affiliation valid hal ids from past searches.
+		if not affil_db_path == '':
+			if '.json' in affil_db_path:
+				# Read the JSON file and create a DataFrame
+				self.affiliation_db = pd.read_json(affil_db_path, lines=True)
+				self.affiliation_db_exist = True
+			elif '.csv' in affil_db_path:
+				# Read from csv.
+				self.affiliation_db = pd.read_csv(affil_db_path)
+				self.affiliation_db_exist = True
+
+					
 
 		# Check if the output directory exists
 		if not os.path.exists(self.output_path):
@@ -140,21 +157,47 @@ class AutomateHal:
 		'''
 		Saves the logs to the output directory.
 		'''
-		# Define log files to be saved.
-		output_file_name = ['log.json', 'treatment summary.json', 'debug_log.json']
-		logs = [self.log_file, self.report_file, self.debug_log_file]
 
-		output_file_name.append(names_for_additional_logs)
-		logs.append(additional_logs)
-		
+		def save_as_json_file(data, json_file_path):
+			'''
+			Dump data to a json file.
+			'''
+
+			# If outputing affiliation_db, first check if existing database exist.
+			if 'affiliation_db' in json_file_path:
+				if self.affiliation_db_exist:
+					json_file_path = self.affil_db_path
+
+			# Check if the path exists, if not, create it
+			if not os.path.exists(os.path.dirname(json_file_path)):
+				try:
+					os.makedirs(os.path.dirname(json_file_path))
+				except OSError as e:
+					print(f"Error creating directory: {e}")
+
+			if isinstance(data, pd.DataFrame):
+				# data.to_json(json_file_path, orient='records', lines=True)
+				
+				# Save to csv.
+				data.to_csv(json_file_path, index=False)
+			else:
+				json_output = json.dumps(data, indent=4)
+
+				# Write the JSON string to the file
+				with open(json_file_path, 'w') as json_file:
+					json_file.write(json_output)
+
+
+		# Define log files to be saved.
+		output_file_name = ['log.json', 'treatment_report.json', 'affiliation_db.csv']
+		logs = [self.log_file, self.report_file, self.affiliation_db]
+	
 		for idx, log in enumerate(logs):
 			json_file_path = '{}{}'.format(self.output_path, output_file_name[idx])
-			# Convert the list to a JSON string
-			json_output = json.dumps(log, indent=4)
-
-			# Write the JSON string to the file
-			with open(json_file_path, 'w') as json_file:
-				json_file.write(json_output)	
+			save_as_json_file(log, json_file_path)
+			
+		for idx, additional_log in enumerate(additional_logs):
+			save_as_json_file(additional_log, names_for_additional_logs[idx])
 
 	
 	def process_one_paper(self, doc):
@@ -198,17 +241,17 @@ class AutomateHal:
 		affiliation_finder_hal = SearchAffilFromHal(auths=paper_info_handler.auths, doc_information=paper_info_handler.doc_information,
 			mode=paper_info_handler.mode, debug_mode=paper_info_handler.debug_mode,
 			log_file=paper_info_handler.log_file, debug_log_file=paper_info_handler.debug_log_file,
-			affiliation_search_history=self.affiliation_search_history)
+			affiliation_db=self.affiliation_db)
 		
 		if not self.debug_mode:
 			affiliation_finder_hal.extract_author_affiliation_in_hal()
 		else:
 			affiliation_finder_hal.debug_show_search_steps = True
 			affiliation_finder_hal.extract_author_affiliation_in_hal()
-
 			self.additional_logs.append(affiliation_finder_hal.log_for_affil_unit)
 			affiliation_finder_hal.log_for_affil_unit = []
-			paper_info_handler.debug_affiliation_hal()
+
+			# paper_info_handler.debug_affiliation_hal()
 
 
 class PaperInformationTreatment(AutomateHal):
@@ -519,9 +562,9 @@ class PaperInformationTreatment(AutomateHal):
 class SearchAffilFromHal(AutomateHal):
 	def __init__(self, auths=[], doc_information={},
 			  mode='search_query', debug_mode=False, AuthDB=[], log_file =[], 
-			  debug_log_file=[], affiliation_search_history=None):
+			  debug_log_file=[], affiliation_db=None):
 		super().__init__(mode=mode, debug_mode=debug_mode, AuthDB=AuthDB, log_file=log_file, 
-				   debug_log_file=debug_log_file, affiliation_search_history=affiliation_search_history)
+				   debug_log_file=debug_log_file, affiliation_db=affiliation_db)
 
 		self.auths = auths
 		self.doc_information = doc_information
@@ -534,8 +577,10 @@ class SearchAffilFromHal(AutomateHal):
 		self.current_affil_idx = 0
 		self.current_affil_country = ''
 		self.current_affil_city = ''
-		self.hal_ids_current_affil = ''
-		self.hal_ids_current_affil_invalid = ''
+		self.hal_ids_current_affil = []
+		self.hal_name_current_affil = []
+		self.hal_ids_current_affil_invalid = []
+		self.hal_name_current_affil_invalid = []
 
 
 	def add_parent_affil_ids(self, auth_idx, affil_dict):
@@ -544,21 +589,31 @@ class SearchAffilFromHal(AutomateHal):
 		'''
 		
 		parent_ids = []
+		parent_names = []
 		if 'parentValid_s' in affil_dict and 'parentDocid_i' in affil_dict:
 			try:
 				if not isinstance(pd.isna(affil_dict['parentDocid_i']), np.ndarray):
 					if pd.isna(affil_dict['parentDocid_i']):
-						return parent_ids
+						return parent_ids, parent_names
 					
 				for idx, parent_id in enumerate(affil_dict['parentDocid_i']):					
 					if affil_dict['parentValid_s'][idx]=='VALID' and pd.notna(parent_id):
 						self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
 							field_name='affil_id', field_value=parent_id)
+						# Save parent id.
 						parent_ids.append(parent_id)
+
+						# Run a search to get parent name.
+						search_result = HaLAPISupports().reqHalRef(ref_name='structure', 
+								search_query='(docid:{})'.format(parent_id), 
+								return_field='&fl=label_s&wt=json')
+						if search_result[0]>0:				
+							parent_names.append(search_result[1][0]['label_s'])
+
 			except:
 				pass
 
-		return parent_ids
+		return parent_ids, parent_names
 
 
 	def get_hal_ids_for_current_affil(self, old_ids, new_ids):
@@ -576,7 +631,7 @@ class SearchAffilFromHal(AutomateHal):
 		Add the results from the current iteration to the historical database.
 		'''
 		# Get the database and affiliation name
-		df_search_history = self.affiliation_search_history
+		df_affiliation_db = self.affiliation_db
 		affil_idx = self.current_affil_idx
 		affil_name = self.aut_affils_before_preprocess[affil_idx]
 
@@ -588,21 +643,23 @@ class SearchAffilFromHal(AutomateHal):
 			'affil_name': affil_name,
 			'status': auth['affil_status'][affil_idx],
 			'valid_ids': self.hal_ids_current_affil,
-			'invalid_ids': self.hal_ids_current_affil_invalid
+			'affil_names_valid': self.hal_name_current_affil,
+			'invalid_ids': self.hal_ids_current_affil_invalid,
+			'affil_names_invalid)': self.hal_name_current_affil_invalid
 		}
 
-		df_search_history.loc[len(df_search_history)] = new_row
+		df_affiliation_db.loc[len(df_affiliation_db)] = new_row
 
 
 	def search_from_historical_database(self):
 		'''
-		Search if the current affiliation name is in the historical database: self.affiliation_search_history.
+		Search if the current affiliation name is in the historical database: self.affiliation_db.
 		If so, copy the status directly.
 		'''
 
 		# Get affli name and search history.
 		affil_name = self.aut_affils_before_preprocess[self.current_affil_idx]
-		df_search_history = self.affiliation_search_history
+		df_search_history = self.affiliation_db
 		auth_idx = self.current_author_idx
 
 		# Find in the history.
@@ -668,6 +725,8 @@ class SearchAffilFromHal(AutomateHal):
 		
 		self.hal_ids_current_affil = []
 		self.hal_ids_current_affil_invalid = []
+		self.hal_name_current_affil = []
+		self.hal_name_current_affil_invalid = []
 
 		# Start to search from the right-most unit (largest):
 		for affil_unit in reversed(aut_affil_list):						            											
@@ -696,13 +755,17 @@ class SearchAffilFromHal(AutomateHal):
 				self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
 									field_name='affil_id', field_value=affil_dict['docid'])
 				# Add parent id as well.
-				parent_ids = self.add_parent_affil_ids(auth_idx, affil_dict)
+				parent_ids, parent_names = self.add_parent_affil_ids(auth_idx, affil_dict)
 
+				# Save the current ids and names.
 				self.hal_ids_current_affil.append(affil_dict['docid'])
+				self.hal_name_current_affil.append(affil_dict['label_s'])
 				if isinstance(parent_ids, list):
 					self.hal_ids_current_affil.extend(parent_ids)
+					self.hal_name_current_affil.extend(parent_names)
 				else:
 					self.hal_ids_current_affil.append(parent_ids)
+					self.hal_name_current_affil.append(parent_names)
 				
 		# If the affiliation does not exist in HAL, add the affiliation manually.
 		# If the affiliation is France, do not create new affiliation as HAL is used for evaluating affiliations, 
@@ -716,7 +779,7 @@ class SearchAffilFromHal(AutomateHal):
 				# Search for the valid affliations in HAL.
 				try:
 					# Here we don't require that the affiliation in HAL is valid.
-					aut_affil = self.aut_affils_before_preprocess[affil_idx]
+					aut_affil = self.aut_affils_after_preprocess[affil_idx]
 					search_result = api_hal.reqHalRef(ref_name='structure', 
 								search_query='(text:"{}")'.format(aut_affil), 
 								return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
@@ -732,17 +795,20 @@ class SearchAffilFromHal(AutomateHal):
 					self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
 						field_name='affil_status', field_value='In HAL (Not valid)')
 					self.hal_ids_current_affil_invalid.append(affil_dict['docid'])
+					self.hal_name_current_affil_invalid.append(affil_dict['label_s'])
 	
 		# If after checking invalid affiliations, still not found:
 		if not affi_exist_in_hal:
 			self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
 				field_name='affil_status', field_value='Not in HAL')
 			self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
-				field_name='affil_not_found_in_hal', field_value=aut_affil)
+				field_name='affil_not_found_in_hal', field_value=self.aut_affils_before_preprocess[affil_idx])
 		
 		# Remove the redundant elements:
 		self.hal_ids_current_affil = ', '.join(set(self.hal_ids_current_affil))
 		self.hal_ids_current_affil_invalid = ', '.join(set(self.hal_ids_current_affil_invalid))
+		self.hal_name_current_affil = ' | '.join(set(self.hal_name_current_affil))
+		self.hal_name_current_affil_invalid = ' | '.join(set(self.hal_name_current_affil_invalid))
 
 
 	def extract_author_affiliation_in_hal(self):
@@ -788,7 +854,7 @@ class SearchAffilFromHal(AutomateHal):
 						# Search HAL and find for the given affiliation.
 						self.search_hal_and_filter_results()
 												
-						# Update the affiliation_search_history database.
+						# Update the affiliation_db database.
 						self.update_historical_database()
 					
 
@@ -1483,6 +1549,8 @@ if __name__ == '__main__':
 	# Define paths for the input data.
 	perso_data_path = './data/inputs/path_and_perso_data.json'
 	author_db_path = './data/inputs/auth_db.csv'
+	affil_db_path = './data/inputs/affiliation_db.csv'
+	# affil_db_path = ''
 
 	# Define the stamps you want to add to the paper.
 	# If you don't want to add stamp: stamps = []
@@ -1490,12 +1558,12 @@ if __name__ == '__main__':
 	# stamps = [] # Add your stamps here
 
 	# Load the scopus dataset.
-	auto_hal = AutomateHal(perso_data_path=perso_data_path, 
+	auto_hal = AutomateHal(perso_data_path=perso_data_path, affil_db_path=affil_db_path,
 				author_db_path=author_db_path, stamps=stamps)
 
 	# For debugging: Only upload the first rowRange records.
 	# Comment this line if you want to upload all the records.
-	rowRange=[0, 1]
+	rowRange=[0, 10]
 	auto_hal.debug_mode = True
 	auto_hal.upload_to_hal = False
 
@@ -1518,7 +1586,9 @@ if __name__ == '__main__':
 			print('Error is: {}'.format(error))
 
 			# Save the log files.
-			auto_hal.dump_log_files()
+			auto_hal.dump_log_files(additional_logs=[auto_hal.additional_logs, auto_hal.debug_log_file], 
+				names_for_additional_logs=['./data/outputs/debug_logs/step_by_step_log.json'])
 
 	# Save the log files.
-	auto_hal.dump_log_files(additional_logs=auto_hal.additional_logs, names_for_additional_logs='step_by_step_log.json')
+	auto_hal.dump_log_files(additional_logs=[auto_hal.additional_logs], 
+		names_for_additional_logs=['./data/outputs/debug_logs/step_by_step_log.json'])
