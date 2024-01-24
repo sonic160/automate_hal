@@ -20,7 +20,9 @@ class AutomateHal:
 	def __init__(self, perso_data_path='', author_db_path='', 
 			  AuthDB='', mode='search_query', stamps=[], 
 			  debug_mode=False, upload_to_hal=True, 
-			  report_file=[], log_file=[], debug_log_file=[]):
+			  report_file=[], log_file=[], debug_log_file=[],
+			  affiliation_search_history=pd.DataFrame(columns=
+				['affil_name', 'status', 'valid_ids', 'invalid_ids'])):
 		'''
 		Initialize the automate_hal object with HAL credentials, stamps, and loads valid authors' data.
 
@@ -54,6 +56,7 @@ class AutomateHal:
 		self.log_file = log_file
 		self.debug_log_file = debug_log_file
 		self.additional_logs = []
+		self.affiliation_search_history = affiliation_search_history
 
 		# Check mode:
 		if mode != 'search_query' and mode != 'csv':
@@ -194,7 +197,8 @@ class AutomateHal:
 		# Search the affiliations in HAL and get the ids.
 		affiliation_finder_hal = SearchAffilFromHal(auths=paper_info_handler.auths, doc_information=paper_info_handler.doc_information,
 			mode=paper_info_handler.mode, debug_mode=paper_info_handler.debug_mode,
-			log_file=paper_info_handler.log_file, debug_log_file=paper_info_handler.debug_log_file)
+			log_file=paper_info_handler.log_file, debug_log_file=paper_info_handler.debug_log_file,
+			affiliation_search_history=self.affiliation_search_history)
 		
 		if not self.debug_mode:
 			affiliation_finder_hal.extract_author_affiliation_in_hal()
@@ -271,16 +275,11 @@ class PaperInformationTreatment(AutomateHal):
 								return_field='&fl=label_s&wt=json')				
 					found_affil_invalid += '{} - {}, '.format(affil_id, search_result[1][0]['label_s'])						
 			found_affil_invalid = found_affil_invalid.strip(', ')
-			# print('invalid ids: {}'.format(found_affil_invalid))
-			
-			# print('affil_exist_in_hal: {}'.format(auth['affil_exist_in_hal']))
-			# print('affil_not_found_in_hal: {}'.format(auth['affil_not_found_in_hal']))
-			# print('\n')
 			
 			log_entry = {
 				'Author name': '{} {}'.format(auth['forename'], auth['surname']),
 				'Affiliations from Scopus': str(auth['affil']),
-				'affil_exist_in_hal': '{}'.format(auth['affil_exist_in_hal']),
+				'affil_status': '{}'.format(auth['affil_status']),
 				'affil_not_found_in_hal': '{}'.format(auth['affil_not_found_in_hal']),
 				'ID valid': '{}'.format(found_affil),
 				'ID invalid': '{}'.format(found_affil_invalid)
@@ -411,7 +410,7 @@ class PaperInformationTreatment(AutomateHal):
 					'affil_postalcode': [auth.postalcode],
 					'affil_id': '',
 					'affil_id_invalid': '',
-					'affil_exist_in_hal': [],
+					'affil_status': [],
 					'affil_not_found_in_hal': [],
 					'idHAL': ''
 				})
@@ -519,13 +518,24 @@ class PaperInformationTreatment(AutomateHal):
 
 class SearchAffilFromHal(AutomateHal):
 	def __init__(self, auths=[], doc_information={},
-			  mode='search_query', debug_mode=False, AuthDB=[], log_file = [], debug_log_file = []):
-		super().__init__(mode=mode, debug_mode=debug_mode, AuthDB=AuthDB, log_file=log_file, debug_log_file=debug_log_file)
+			  mode='search_query', debug_mode=False, AuthDB=[], log_file =[], 
+			  debug_log_file=[], affiliation_search_history=None):
+		super().__init__(mode=mode, debug_mode=debug_mode, AuthDB=AuthDB, log_file=log_file, 
+				   debug_log_file=debug_log_file, affiliation_search_history=affiliation_search_history)
 
 		self.auths = auths
 		self.doc_information = doc_information
 		self.debug_show_search_steps = False
 		self.log_for_affil_unit = []
+		self.aut_affils_after_preprocess = []
+		self.aut_affils_before_preprocess = []
+		self.current_author_name = ''
+		self.current_author_idx = 0
+		self.current_affil_idx = 0
+		self.current_affil_country = ''
+		self.current_affil_city = ''
+		self.hal_ids_current_affil = ''
+		self.hal_ids_current_affil_invalid = ''
 
 
 	def add_parent_affil_ids(self, auth_idx, affil_dict):
@@ -533,18 +543,206 @@ class SearchAffilFromHal(AutomateHal):
 		Given a valid affiliation id, add its parent docid if existed.
 		'''
 		
+		parent_ids = []
 		if 'parentValid_s' in affil_dict and 'parentDocid_i' in affil_dict:
 			try:
 				if not isinstance(pd.isna(affil_dict['parentDocid_i']), np.ndarray):
 					if pd.isna(affil_dict['parentDocid_i']):
-						return
+						return parent_ids
 					
 				for idx, parent_id in enumerate(affil_dict['parentDocid_i']):					
 					if affil_dict['parentValid_s'][idx]=='VALID' and pd.notna(parent_id):
 						self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
-											   field_name='affil_id', field_value=parent_id)
+							field_name='affil_id', field_value=parent_id)
+						parent_ids.append(parent_id)
 			except:
 				pass
+
+		return parent_ids
+
+
+	def get_hal_ids_for_current_affil(self, old_ids, new_ids):
+		set_A = set(old_ids.split(', '))
+		set_B = set(new_ids.split(', '))
+		# Find the added elements in B
+		added_elements = set_B - set_A
+		# Convert the result back to a string
+		added_elements_string = ', '.join(added_elements)
+
+		return added_elements_string
+
+	def update_historical_database(self):
+		'''
+		Add the results from the current iteration to the historical database.
+		'''
+		# Get the database and affiliation name
+		df_search_history = self.affiliation_search_history
+		affil_idx = self.current_affil_idx
+		affil_name = self.aut_affils_before_preprocess[affil_idx]
+
+		# Get the results after the current iteration. Read from self.auths, which is just updated.
+		auth_idx = self.current_author_idx
+		auth = self.auths[auth_idx]
+
+		new_row = {
+			'affil_name': affil_name,
+			'status': auth['affil_status'][affil_idx],
+			'valid_ids': self.hal_ids_current_affil,
+			'invalid_ids': self.hal_ids_current_affil_invalid
+		}
+
+		df_search_history.loc[len(df_search_history)] = new_row
+
+
+	def search_from_historical_database(self):
+		'''
+		Search if the current affiliation name is in the historical database: self.affiliation_search_history.
+		If so, copy the status directly.
+		'''
+
+		# Get affli name and search history.
+		affil_name = self.aut_affils_before_preprocess[self.current_affil_idx]
+		df_search_history = self.affiliation_search_history
+		auth_idx = self.current_author_idx
+
+		# Find in the history.
+		df_result = df_search_history[df_search_history['affil_name'].str.lower() == affil_name.lower()]
+		
+		# If found, get the status.
+		if len(df_result)==0:
+			return False
+		else:
+			status = df_result.iloc[0]['status']
+		
+		# Log the "affil_status".
+		self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+			field_name='affil_status', field_value=status)
+
+		# If exists in hal: Log the HAL ids.
+		if status == 'In HAL (Valid)':
+			ids_in_hal = df_result.iloc[0]['valid_ids']
+			self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+				field_name='affil_id', field_value=ids_in_hal)
+		
+		# If exists in hal but invalid: Log the HAL ids.
+		if status == 'In HAL (Not valid)':
+			ids_in_hal_invalid = df_result.iloc[0]['invalid_ids']
+			self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+				field_name='affil_id_invalid', field_value=ids_in_hal_invalid)
+		
+		# If not exists in hal: Log the affiliation name.
+		if status == 'Not in HAL':
+			self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+				field_name='affil_not_found_in_hal', field_value=affil_name)
+
+		return True				
+
+
+	def search_hal_and_filter_results(self):
+		'''
+		This function search in HAL for valid affiliation based on a given affiliation unit name. 
+		Then, it performs a series of filters to make sure that only the correct match is used.
+		If not found in HAL, it will launch another round of search but looking for invalid affiliation as well.
+		If not found yet, depending on the user's choice, it will either skip the affiliation unit but mark it in a given field in self.auths.
+		'''
+		# Import HAL API supports.
+		api_hal = HaLAPISupports()
+
+		# Retrieve parameters.
+		aut_affils = self.aut_affils_after_preprocess
+		affil_idx = self.current_affil_idx
+		auth_idx = self.current_author_idx
+		author_name = self.current_author_name
+		affil_country = self.current_affil_country
+		affil_city = self.current_affil_city
+
+		# Preprocess each auth affiliation.
+		aut_affil = self.preprocess_affiliation_name(aut_affils, affil_idx, affil_country)									
+
+		# Generate affiliation list.
+		aut_affil_list = self.generate_affil_list(aut_affil)
+
+		# Initially set to be not existed.
+		affi_exist_in_hal = False				
+		parent_affil_id = [] # Store all the parent affiliations. Use to exclude child affilation with the same name.
+		
+		self.hal_ids_current_affil = []
+		self.hal_ids_current_affil_invalid = []
+
+		# Start to search from the right-most unit (largest):
+		for affil_unit in reversed(aut_affil_list):						            											
+			affi_unit_exist_in_hal = False											
+
+			# Search for the valid affliations in HAL.
+			try:
+				search_result = api_hal.reqHalRef(ref_name='structure', 
+							search_query='(text:({}) valid_s:"VALID")'.format(affil_unit), 
+							return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
+			except:
+				search_result = [0]
+				pass
+
+			# Get the best-matched one and add it to the xml-tree.
+			affi_unit_exist_in_hal, affil_dict = self.pick_affiliation_from_search_results(search_result, affil_country, affil_city, aut=author_name, affil_name=affil_unit, parent_affil_id=parent_affil_id)
+			# If found, add to the xml tree.
+			if affi_unit_exist_in_hal:
+				affi_exist_in_hal = True
+				# Update teh parent_affil_id for future search.
+				parent_affil_id.append(affil_dict['docid'])
+				if not affil_country:
+					affil_country = affil_dict['country_s']
+
+				# Save the results to self.auths.
+				self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+									field_name='affil_id', field_value=affil_dict['docid'])
+				# Add parent id as well.
+				parent_ids = self.add_parent_affil_ids(auth_idx, affil_dict)
+
+				self.hal_ids_current_affil.append(affil_dict['docid'])
+				if isinstance(parent_ids, list):
+					self.hal_ids_current_affil.extend(parent_ids)
+				else:
+					self.hal_ids_current_affil.append(parent_ids)
+				
+		# If the affiliation does not exist in HAL, add the affiliation manually.
+		# If the affiliation is France, do not create new affiliation as HAL is used for evaluating affiliations, 
+		# so there is a stricker rule regarding creating affiliations.
+		if affi_exist_in_hal:			
+			self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+					field_name='affil_status', field_value='In HAL (Valid)')			
+		elif affil_country:
+			if affil_country.lower() != 'fr' and affil_country != '':
+				# Before adding new affiliation, check if the affiliation exists in HAL but not VALID
+				# Search for the valid affliations in HAL.
+				try:
+					# Here we don't require that the affiliation in HAL is valid.
+					aut_affil = self.aut_affils_before_preprocess[affil_idx]
+					search_result = api_hal.reqHalRef(ref_name='structure', 
+								search_query='(text:"{}")'.format(aut_affil), 
+								return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
+				except:
+					search_result = [0]
+					pass
+				affi_exist_in_hal, affil_dict = self.pick_affiliation_from_search_results(search_result, affil_name=aut_affil, invalid_affil=True)
+				
+				# If exist in HAL but not valid.
+				if affi_exist_in_hal:
+					self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+									field_name='affil_id_invalid', field_value=affil_dict['docid'])
+					self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+						field_name='affil_status', field_value='In HAL (Not valid)')
+					self.hal_ids_current_affil_invalid.append(affil_dict['docid'])
+	
+		# If after checking invalid affiliations, still not found:
+		if not affi_exist_in_hal:
+			self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+				field_name='affil_status', field_value='Not in HAL')
+			self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+				field_name='affil_not_found_in_hal', field_value=aut_affil)
+		
+		# Remove the redundant elements:
+		self.hal_ids_current_affil = ', '.join(set(self.hal_ids_current_affil))
+		self.hal_ids_current_affil_invalid = ', '.join(set(self.hal_ids_current_affil_invalid))
 
 
 	def extract_author_affiliation_in_hal(self):
@@ -557,9 +755,6 @@ class SearchAffilFromHal(AutomateHal):
 
 		'''
 
-		# Import HAL API supports.
-		api_hal = HaLAPISupports()
-
 		# Start searching the affiliation in HAL.
 		auths = self.auths
 		for auth_idx, aut in enumerate(auths):
@@ -567,87 +762,35 @@ class SearchAffilFromHal(AutomateHal):
 			# Only extract for those not defined in AuthDB.
 			if not aut['affil_id']:
 				# Extract the affiliation name from the search results.
+				self.aut_affils_before_preprocess = copy.deepcopy(aut['affil'])
+
 				aut_affils = copy.deepcopy(aut['affil'])
+				self.aut_affils_after_preprocess = aut_affils
 				if aut_affils[0] == None:
 					aut_affils = ['Unknown']
 
 				affil_countries = aut['affil_country']
 				affli_cities = aut['affil_city']
-				author_name = {'forename': aut['forename'], 'surname': aut['surname']}
+				self.current_author_name = {'forename': aut['forename'], 'surname': aut['surname']}
+				self.current_author_idx = auth_idx
 
-				for affil_idx in range(len(aut_affils)):												
+				for affil_idx in range(len(aut_affils)):
+					self.current_affil_idx = affil_idx												
 					# Get country and city of the affiliation.
-					affil_country = self.generate_abbreviation(affil_countries[affil_idx])
-					affil_city = affli_cities[affil_idx]
+					self.current_affil_country = self.generate_abbreviation(affil_countries[affil_idx])
+					self.current_affil_city = affli_cities[affil_idx]
+
+					# Check if the current affiliatio name exists in the historical database.
+					# If true, update the related files and continue with the next affiliation.
+					if self.search_from_historical_database():
+						continue
+					else:
+						# Search HAL and find for the given affiliation.
+						self.search_hal_and_filter_results()
+												
+						# Update the affiliation_search_history database.
+						self.update_historical_database()
 					
-					# Preprocess each auth affiliation.
-					aut_affil = self.preprocess_affiliation_name(aut_affils, affil_idx, affil_country)									
-
-					# Generate affiliation list.
-					aut_affil_list = self.generate_affil_list(aut_affil)
-
-					# Initially set to be not existed.
-					affi_exist_in_hal = False				
-					parent_affil_id = [] # Store all the parent affiliations. Use to exclude child affilation with the same name.
-
-					# Start to search from the right-most unit (largest):
-					for affil_unit in reversed(aut_affil_list):						            											
-						affi_unit_exist_in_hal = False											
-
-						# Search for the valid affliations in HAL.
-						try:
-							search_result = api_hal.reqHalRef(ref_name='structure', 
-										search_query='(text:({}) valid_s:"VALID")'.format(affil_unit), 
-										return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
-						except:
-							search_result = [0]
-							pass
-
-						# Get the best-matched one and add it to the xml-tree.
-						affi_unit_exist_in_hal, affil_dict = self.pick_affiliation_from_search_results(search_result, affil_country, affil_city, aut=author_name, affil_name=affil_unit, parent_affil_id=parent_affil_id)
-						# If found, add to the xml tree.
-						if affi_unit_exist_in_hal:
-							affi_exist_in_hal = True
-							# Update teh parent_affil_id for future search.
-							parent_affil_id.append(affil_dict['docid'])
-							if not affil_country:
-								affil_country = affil_dict['country_s']
-
-							# Save the results to self.auths.
-							self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
-											   field_name='affil_id', field_value=affil_dict['docid'])
-							# Add parent id as well.
-							self.add_parent_affil_ids(auth_idx, affil_dict)
-							
-					# If the affiliation does not exist in HAL, add the affiliation manually.
-					# If the affiliation is France, do not create new affiliation as HAL is used for evaluating affiliations, 
-					# so there is a stricker rule regarding creating affiliations.
-					if not affi_exist_in_hal and affil_country:
-						if affil_country.lower() != 'fr' and affil_country != '':
-							# Before adding new affiliation, check if the affiliation exists in HAL but not VALID
-							# Search for the valid affliations in HAL.
-							try:
-								# Here we don't require that the affiliation in HAL is valid.
-								aut_affil = aut['affil'][affil_idx]
-								search_result = api_hal.reqHalRef(ref_name='structure', 
-											search_query='(text:"{}")'.format(aut_affil), 
-											return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
-							except:
-								search_result = [0]
-								pass
-							affi_exist_in_hal, affil_dict = self.pick_affiliation_from_search_results(search_result, affil_name=aut_affil, invalid_affil=True)
-							
-							# If exist in HAL but not valid.
-							if affi_exist_in_hal:
-								self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
-											   field_name='affil_id_invalid', field_value=affil_dict['docid'])
-
-					# Save data and logging.	
-					self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
-											   field_name='affil_exist_in_hal', field_value=affi_exist_in_hal)
-					if not affi_exist_in_hal:
-						self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
-											   field_name='affil_not_found_in_hal', field_value=aut_affil)
 
 
 	# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
@@ -935,23 +1078,22 @@ class SearchAffilFromHal(AutomateHal):
 		'''
 		Based on whether affiliations exist in HAL, update the related fields in self.auths.
 		'''
-		def update_string_field(auth_idx, field_name, field_value):
+		def update_affil_id_field(auth_idx, field_name, field_value):
 			# Save the results to self.auths.
 			if self.auths[auth_idx][field_name] == '':
 				self.auths[auth_idx][field_name] = str(field_value)
 			else:
 				# Check if the docid is in the list already.
-				existing_string = self.auths[auth_idx][field_name].split(', ')
-				if field_value not in existing_string:
-					self.auths[auth_idx][field_name] += ', {}'.format(field_value)
-		
+				existing_string = self.auths[auth_idx][field_name]				
+				if field_value not in existing_string.split(', '):
+					self.auths[auth_idx][field_name] += ', {}'.format(field_value)		
 
 		def update_list_field(auth_idx, field_name, field_value):
 			self.auths[auth_idx][field_name].append(field_value)
 
 
 		if field_name=='affil_id' or field_name=='affil_id_invalid':
-			update_string_field(auth_idx, field_name, field_value)
+			update_affil_id_field(auth_idx, field_name, field_value)
 		else:
 			update_list_field(auth_idx, field_name, field_value)		
 	

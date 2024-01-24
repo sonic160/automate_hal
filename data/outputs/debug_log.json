@@ -7,7 +7,7 @@
         {
             "Author name": "Abdullah Alsulieman",
             "Affiliations from Scopus": "[\"Mary Kay O'Connor Process Safety Center, Texas A&M Engineering Experiment Station\", 'Artie McFerrin Department of Chemical Engineering, Texas A&M University']",
-            "affil_exist_in_hal": "[False, True]",
+            "affil_status": "['Not in HAL', 'In HAL (Valid)']",
             "affil_not_found_in_hal": "[\"Mary Kay O'Connor Process Safety Center, Texas A&M Engineering Experiment Station\"]",
             "ID valid": "301080 - Texas A&M University [College Station]",
             "ID invalid": ""
@@ -15,7 +15,7 @@
         {
             "Author name": "Faisal Khan",
             "Affiliations from Scopus": "[\"Mary Kay O'Connor Process Safety Center, Texas A&M Engineering Experiment Station\", 'Artie McFerrin Department of Chemical Engineering, Texas A&M University', 'Industrial and Systems Engineering Department, Texas A&M University']",
-            "affil_exist_in_hal": "[False, True, True]",
+            "affil_status": "['Not in HAL', 'In HAL (Valid)', 'In HAL (Valid)']",
             "affil_not_found_in_hal": "[\"Mary Kay O'Connor Process Safety Center, Texas A&M Engineering Experiment Station\"]",
             "ID valid": "301080 - Texas A&M University [College Station]",
             "ID invalid": ""
@@ -23,7 +23,7 @@
         {
             "Author name": "Mahmoud El-Halwagi",
             "Affiliations from Scopus": "[\"Mary Kay O'Connor Process Safety Center, Texas A&M Engineering Experiment Station\", 'Artie McFerrin Department of Chemical Engineering, Texas A&M University', 'Gas and Fuels Research Center, Texas A&M Engineering Experiment Station']",
-            "affil_exist_in_hal": "[False, True, False]",
+            "affil_status": "['Not in HAL', 'In HAL (Valid)', 'Not in HAL']",
             "affil_not_found_in_hal": "[\"Mary Kay O'Connor Process Safety Center, Texas A&M Engineering Experiment Station\", 'gas and fuels research center, texas a&m engineering experiment station']",
             "ID valid": "301080 - Texas A&M University [College Station]",
             "ID invalid": ""
@@ -31,7 +31,7 @@
         {
             "Author name": "Xihe Ge",
             "Affiliations from Scopus": "['Chair on Risk and Resilience of Complex Systems, Laboratoire Genie Industriel, Universite Paris-Saclay']",
-            "affil_exist_in_hal": "[True]",
+            "affil_status": "['In HAL (Valid)']",
             "affil_not_found_in_hal": "[]",
             "ID valid": "419361 - Universit\u00e9 Paris-Saclay, 1043712 - Laboratoire G\u00e9nie Industriel [LGI], 411575 - CentraleSup\u00e9lec",
             "ID invalid": ""
@@ -39,7 +39,7 @@
         {
             "Author name": "Zhiguo Zeng",
             "Affiliations from Scopus": "['Chair on Risk and Resilience of Complex Systems, Laboratoire Genie Industriel, Universite Paris-Saclay']",
-            "affil_exist_in_hal": "[]",
+            "affil_status": "[]",
             "affil_not_found_in_hal": "[]",
             "ID valid": "1043712 - Laboratoire G\u00e9nie Industriel [LGI], 411575 - CentraleSup\u00e9lec, 419361 - Universit\u00e9 Paris-Saclay",
             "ID invalid": ""
@@ -47,7 +47,7 @@
         {
             "Author name": "Sergiy Butenko",
             "Affiliations from Scopus": "['Industrial and Systems Engineering Department, Texas A&M University']",
-            "affil_exist_in_hal": "[True]",
+            "affil_status": "['In HAL (Valid)']",
             "affil_not_found_in_hal": "[]",
             "ID valid": "301080 - Texas A&M University [College Station]",
             "ID invalid": ""
@@ -61,7 +61,7 @@
         {
             "Author name": "Zhiguo Zeng",
             "Affiliations from Scopus": "['Chair on Risk and Resilience of Complex Systems, Laboratoie Genie Industriel, CentraleSup\u00e9lec, Universit\u00e9 Paris-Saclay']",
-            "affil_exist_in_hal": "[]",
+            "affil_status": "[]",
             "affil_not_found_in_hal": "[]",
             "ID valid": "1043712 - Laboratoire G\u00e9nie Industriel [LGI], 411575 - CentraleSup\u00e9lec, 419361 - Universit\u00e9 Paris-Saclay",
             "ID invalid": ""
@@ -69,7 +69,7 @@
         {
             "Author name": "Anne Barros",
             "Affiliations from Scopus": "['Chair on Risk and Resilience of Complex Systems, Laboratoie Genie Industriel, CentraleSup\u00e9lec, Universit\u00e9 Paris-Saclay']",
-            "affil_exist_in_hal": "[True]",
+            "affil_status": "['In HAL (Valid)']",
             "affil_not_found_in_hal": "[]",
             "ID valid": "419361 - Universit\u00e9 Paris-Saclay, 411575 - CentraleSup\u00e9lec",
             "ID invalid": ""
@@ -77,7 +77,7 @@
         {
             "Author name": "David Coit",
             "Affiliations from Scopus": "['Department of Industrial Systems Engineering, Rutgers University']",
-            "affil_exist_in_hal": "[True]",
+            "affil_status": "['In HAL (Valid)']",
             "affil_not_found_in_hal": "[]",
             "ID valid": "566577 - Rutgers University System [Rutgers]",
             "ID invalid": ""
