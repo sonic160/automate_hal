@@ -1,5 +1,5 @@
 from pybliometrics.scopus import AuthorRetrieval, AbstractRetrieval, ScopusSearch
-import csv, json, requests, os, re, math, copy
+import csv, json, requests, os, re, math, copy, json
 import xml.etree.ElementTree as ET
 import numpy as np
 import pandas as pd
@@ -17,7 +17,10 @@ class AutomateHal:
 
 	'''
 
-	def __init__(self, perso_data_path='', author_db_path='', stamps=[], mode='search_query'):
+	def __init__(self, perso_data_path='', author_db_path='', 
+			  AuthDB='', mode='search_query', stamps=[], 
+			  debug_mode=False, upload_to_hal=True, 
+			  report_file=[], log_file=[], debug_log_file=[]):
 		'''
 		Initialize the automate_hal object with HAL credentials, stamps, and loads valid authors' data.
 
@@ -31,12 +34,12 @@ class AutomateHal:
 
 		self.hal_user_name = '' # HAL username
 		self.hal_pswd = '' # HAL password
-		self.AuthDB = '' # A dictionary that stores user-defined data to refine the search results.
+		self.AuthDB = AuthDB # A dictionary that stores user-defined data to refine the search results.
 		self.mode = mode # Mode of operation: search_query or csv
 		self.ite = -1 # Index of the current iterature.
 		self.stamps = stamps # List of stamps to be used in the Tei files.
-		self.debug_mode = False # Whether to run in debug mode. If True, not verifying if existed in HAL.
-		self.upload_to_hal = True # Whether to upload the documet reference to the HAL repository.
+		self.debug_mode = debug_mode # Whether to run in debug mode. If True, not verifying if existed in HAL.
+		self.upload_to_hal = upload_to_hal # Whether to upload the documet reference to the HAL repository.
 		self.output_path = './data/outputs/'
 		self.report_entry = {
 			'eid': '',
@@ -47,15 +50,17 @@ class AutomateHal:
 			'hal_matches': '',
 			'email_corr_auth': ''
 		}
-		self.report = []
-		self.log = []
+		self.report_file = report_file
+		self.log_file = log_file
+		self.debug_log_file = debug_log_file
 
 		# Check mode:
 		if mode != 'search_query' and mode != 'csv':
 			raise ValueError('mode must be either "search_query" or "csv".')
 
 		# Load the personal credentials and author database.
-		self.load_data_and_initialize(perso_data_path, author_db_path)
+		if not perso_data_path=='' and not author_db_path=='':
+			self.load_data_and_initialize(perso_data_path, author_db_path)
 
 
 	def load_data_and_initialize(self, perso_data_path, author_db_path):
@@ -116,9 +121,33 @@ class AutomateHal:
 			writer.writerow(log_info)
 
 
-	def save_to_log(self, file_name='log.csv'):
-		log_file = '{}{}'.format(self.output_path, file_name)
+	def add_an_entry_to_log_file(self, log_file, log_entry):
+		'''
+		Add an entry to the log file (self.log_file, self.debug_log_file, self.report_file).
+		The entry can be an string or a dictionary. 
+		'''
+		if isinstance(log_file, list):
+			log_file.append(log_entry)
+		else:
+			raise ValueError('Error while adding log entry: log_file must be a list!')
+		
 
+	def dump_log_files(self):
+		'''
+		Saves the logs to the output directory.
+		'''
+		# Define log files to be saved.
+		output_file_name = ['log.json', 'treatment summary.json', 'debug_log.json']
+		logs = [self.log_file, self.report_file, self.debug_log_file]
+		
+		for idx, log in enumerate(logs):
+			json_file_path = '{}{}'.format(self.output_path, output_file_name[idx])
+			# Convert the list to a JSON string
+			json_output = json.dumps(log, indent=4)
+
+			# Write the JSON string to the file
+			with open(json_file_path, 'w') as json_file:
+				json_file.write(json_output)	
 
 	
 	def process_one_paper(self, doc):
@@ -136,15 +165,17 @@ class AutomateHal:
 		"""
 
 		# Create a papaer information treator.
-		paper_info_handler = PaperInformationTreatment(mode=self.mode, AuthDB=self.AuthDB)
+		paper_info_handler = PaperInformationTreatment(
+			mode=self.mode, debug_mode=self.debug_mode, AuthDB=self.AuthDB,
+			log_file=self.log_file, debug_log_file=self.debug_log_file)
 
 		# Get the docids and document type.
 		paper_info_handler.extract_docids_and_doc_type(doc)
 
 		# Verify if the paper is already in HAL.
 		if not self.debug_mode and paper_info_handler.verify_if_existed_in_hal(doc):
-			self.log.append('End of operation: The paper is already in HAL.')
-			self.report_entry['state'] = 'Already in HAL'
+			# self.log_file.append('End of operation: The paper is already in HAL.')
+			# self.report_entry['state'] = 'Already in HAL'
 			return
 		
 		# Extract & enrich authors data
@@ -160,16 +191,8 @@ class AutomateHal:
 		affiliation_finder_hal = SearchAffilFromHal(auths=paper_info_handler.auths)
 		affiliation_finder_hal.extract_author_affiliation_in_hal()
 
-		print('End of operation: The paper has been processed.')
-	
-		for auth in paper_info_handler.auths:
-			print('Author name: {}'.format(auth['surname']))
-			print('affiliations: {}'.format(auth['affil']))
-			print('found ids: {}'.format(auth['affil_id']))
-			print('invalid ids: {}'.format(auth['affil_id_invalid']))
-			print('affil_exist_in_hal: {}'.format(auth['affil_exist_in_hal']))
-			print('affil_not_found_in_hal: {}'.format(auth['affil_not_found_in_hal']))
-			print('\n')
+		if self.debug_mode:
+			paper_info_handler.debug_affiliation_hal()
 
 
 class PaperInformationTreatment(AutomateHal):
@@ -177,10 +200,15 @@ class PaperInformationTreatment(AutomateHal):
 	This Subclass is in charge of treating and complementing information of each paper.
 
 	'''
-	def __init__(self, mode='search_query', AuthDB=[]):
+	def __init__(self, mode='search_query', debug_mode=False, AuthDB=[], log_file = [], debug_log_file = []):
+		super().__init__(mode=mode, debug_mode=debug_mode, AuthDB=AuthDB, log_file=log_file, debug_log_file=debug_log_file)
 		self.auths = [] # A dictionary to store author information.
-		self.AuthDB = AuthDB
-		self.docid = '' # Document ID: A dictionary in format of {'eid': '', 'doi': '', 'doctype': ''}
+		self.doc_information = {
+			'eid': '', 
+			'doi': '', 
+			'doctype': '', 
+			'title': ''
+		} # Document ID: A dictionary in format of {'eid': '', 'doi': '', 'doctype': '', 'title': ''}
 		self.info_complement = {
 			'funding': None,
 			'funding_text': '',
@@ -193,8 +221,62 @@ class PaperInformationTreatment(AutomateHal):
 			'endingPage': '',
 			'publisher': ''
 		} # A dictionary to store additional information about the document.
-		self.mode = mode
 	
+
+	def debug_affiliation_hal(self):
+		'''
+		This function is used for debugging the function of extracting valid author information from HAL.
+		For each paper treated, it will log the related debugging information into "debug_affil.csv".
+
+		'''
+		auths = self.auths
+		doc_information = self.doc_information
+		
+		log = [{'eid': doc_information['eid'], 'Paper title': doc_information['title']}]	
+
+		for auth in auths:
+			# print('Author name: {}'.format(auth['surname']))
+			# print('Original affiliations: {}'.format(auth['affil']))
+			
+			affil_ids = auth['affil_id'].split(', ')			
+			found_affil = ''
+			for affil_id in affil_ids:
+				if not affil_id == '':
+					search_result = HaLAPISupports().reqHalRef(ref_name='structure', 
+								search_query='(docid:{})'.format(affil_id), 
+								return_field='&fl=label_s&wt=json')
+					if search_result[0]>0:				
+						found_affil += '{} - {}, '.format(affil_id, search_result[1][0]['label_s'])
+			found_affil = found_affil.strip(', ')
+			# print('found ids: {}'.format(found_affil))
+
+			affil_ids = auth['affil_id_invalid'].split(', ')
+			found_affil_invalid = ''
+			for affil_id in affil_ids:
+				if not affil_id == '':
+					search_result = HaLAPISupports().reqHalRef(ref_name='structure', 
+								search_query='(docid:{})'.format(affil_id), 
+								return_field='&fl=label_s&wt=json')				
+					found_affil_invalid += '{} - {}, '.format(affil_id, search_result[1][0]['label_s'])						
+			found_affil_invalid = found_affil_invalid.strip(', ')
+			# print('invalid ids: {}'.format(found_affil_invalid))
+			
+			# print('affil_exist_in_hal: {}'.format(auth['affil_exist_in_hal']))
+			# print('affil_not_found_in_hal: {}'.format(auth['affil_not_found_in_hal']))
+			# print('\n')
+			
+			log_entry = {
+				'Author name': '{} {}'.format(auth['forename'], auth['surname']),
+				'Affiliations from Scopus': str(auth['affil']),
+				'affil_exist_in_hal': '{}'.format(auth['affil_exist_in_hal']),
+				'affil_not_found_in_hal': '{}'.format(auth['affil_not_found_in_hal']),
+				'ID valid': '{}'.format(found_affil),
+				'ID invalid': '{}'.format(found_affil_invalid)
+			}
+			log.append(log_entry)	
+		
+		self.add_an_entry_to_log_file(self.debug_log_file, log)
+
 
 	def extract_complementary_paper_information(self, ab):
 		"""
@@ -267,7 +349,7 @@ class PaperInformationTreatment(AutomateHal):
 		"""      
 
 		# Get details for each paper using AbstractRetrieval API.
-		ab = AbstractRetrieval(self.docid['eid'], view='FULL')
+		ab = AbstractRetrieval(self.doc_information['eid'], view='FULL')
 		authors = ab.authorgroup
 
 		# Initialize an empty list to store author information
@@ -344,19 +426,19 @@ class PaperInformationTreatment(AutomateHal):
 			doc_type_supported, doc_type = self.is_doctype_supported(doc['aggregationType'])
 			if not doc_type_supported:
 				raise ValueError('Document type not supported! doc_type={}'.format(doc_type))
-			self.docid = {'eid': doc['eid'], 'doi': doc['doi'], 'doctype': doc_type}
+			self.doc_information = {'eid': doc['eid'], 'doi': doc['doi'], 'doctype': doc_type, 'title': doc['title']}
 		elif self.mode =='csv':
 			doc_type_supported, doc_type = self.is_doctype_supported(doc['Document Type'])
 			if not doc_type_supported:
 				raise('Document type not supported! doc_type={}'.format(doc_type))
-			self.docid = {'eid': doc['EID'], 'doi': doc['DOI'], 'doctype': doc_type}
+			self.doc_information = {'eid': doc['EID'], 'doi': doc['DOI'], 'doctype': doc_type}
 		else: 
 			raise ValueError('Please choose teh correct mode! Has to be "search_query" or "csv".')
 
 
 	def is_doctype_supported(self, doctype):
 		"""
-		Matches Scopus document types to HAL document types, and update the self.docid['doctype'] dictionary.
+		Matches Scopus document types to HAL document types, and update the self.doc_information['doctype'] dictionary.
 
 		Parameters:
 		- doctype (str): Scopus document type.
@@ -398,7 +480,7 @@ class PaperInformationTreatment(AutomateHal):
 
 		# Verify if the publication existed in HAL.
 		# First check by doi:
-		idInHal = api_hal.reqWithIds(self.docid['doi'])	
+		idInHal = api_hal.reqWithIds(self.doc_information['doi'])	
 		
 		if idInHal[0] > 0:
 			print(f"already in HAL")
@@ -426,6 +508,25 @@ class PaperInformationTreatment(AutomateHal):
 class SearchAffilFromHal(PaperInformationTreatment):
 	def __init__(self, auths=[]):
 		self.auths = auths
+
+
+	def add_parent_affil_ids(self, auth_idx, affil_dict):
+		'''
+		Given a valid affiliation id, add its parent docid if existed.
+		'''
+		
+		if 'parentValid_s' in affil_dict and 'parentDocid_i' in affil_dict:
+			try:
+				if not isinstance(pd.isna(affil_dict['parentDocid_i']), np.ndarray):
+					if pd.isna(affil_dict['parentDocid_i']):
+						return
+					
+				for idx, parent_id in enumerate(affil_dict['parentDocid_i']):					
+					if affil_dict['parentValid_s'][idx]=='VALID' and pd.notna(parent_id):
+						self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
+											   field_name='affil_id', field_value=parent_id)
+			except:
+				pass
 
 
 	def extract_author_affiliation_in_hal(self):
@@ -497,6 +598,8 @@ class SearchAffilFromHal(PaperInformationTreatment):
 							# Save the results to self.auths.
 							self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
 											   field_name='affil_id', field_value=affil_dict['docid'])
+							# Add parent id as well.
+							self.add_parent_affil_ids(auth_idx, affil_dict)
 							
 					# If the affiliation does not exist in HAL, add the affiliation manually.
 					# If the affiliation is France, do not create new affiliation as HAL is used for evaluating affiliations, 
@@ -525,7 +628,7 @@ class SearchAffilFromHal(PaperInformationTreatment):
 											   field_name='affil_exist_in_hal', field_value=affi_exist_in_hal)
 					if not affi_exist_in_hal:
 						self.update_auths_fields_affil_from_hal(auth_idx=auth_idx, 
-											   field_name='affil_not_found_in_hal', field_value=aut_affil)				
+											   field_name='affil_not_found_in_hal', field_value=aut_affil)
 
 
 	# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
@@ -796,7 +899,10 @@ class SearchAffilFromHal(PaperInformationTreatment):
 			if self.auths[auth_idx][field_name] == '':
 				self.auths[auth_idx][field_name] = str(field_value)
 			else:
-				self.auths[auth_idx][field_name] += ', {}'.format(field_value)
+				# Check if the docid is in the list already.
+				existing_string = self.auths[auth_idx][field_name].split(', ')
+				if field_value not in existing_string:
+					self.auths[auth_idx][field_name] += ', {}'.format(field_value)
 		
 
 		def update_list_field(auth_idx, field_name, field_value):
@@ -1163,56 +1269,63 @@ class HaLAPISupports:
 # Testing here:
 if __name__ == '__main__':
 	# Define search query.
-    # search_query = 'AU-ID(55659850100) OR AU-ID(55348807500) OR AU-ID(7102745133) AND PUBYEAR > 2017 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)'
-    # search_query = 'AU-ID(55348807500) AND PUBYEAR > 2016 AND PUBYEAR < 2025' # Zhiguo Zeng
-    # search_query = 'AU-ID(7005289082) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Enrico Zio
-    # search_query = 'AU-ID(7005289082) AND PUBYEAR > 2000  AND PUBYEAR < 2025' # Enrico Zio
-    # search_query = 'AU-ID(6602469780) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)' # Bernard Yannou
-    # search_query = 'AU-ID(56609542700) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Yanfu Li
-    # search_query = 'AU-ID(14049106600) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Nicola Pedroni
-    # search_query = 'AU-ID(7102745133) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Anne Barros
-    search_query = 'EID (2-s2.0-85178664213)'
+	# search_query = 'AU-ID(55659850100) OR AU-ID(55348807500) OR AU-ID(7102745133) AND PUBYEAR > 2017 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)'
+	# search_query = 'AU-ID(55348807500) AND PUBYEAR > 2016 AND PUBYEAR < 2025' # Zhiguo Zeng
+	# search_query = 'AU-ID(7005289082) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Enrico Zio
+	# search_query = 'AU-ID(7005289082) AND PUBYEAR > 2000  AND PUBYEAR < 2025' # Enrico Zio
+	# search_query = 'AU-ID(6602469780) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)' # Bernard Yannou
+	# search_query = 'AU-ID(56609542700) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Yanfu Li
+	# search_query = 'AU-ID(14049106600) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Nicola Pedroni
+	# search_query = 'AU-ID(7102745133) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Anne Barros
+	# search_query = 'EID (2-s2.0-85178664213)'
 
-    results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
-    df_result = pd.DataFrame(results.results)
-    # df_result.to_csv('./data/outputs/scopus_search_results.csv', index=False)
+	# results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
+	# df_result = pd.DataFrame(results.results)
+	# df_result.to_csv('./data/outputs/scopus_search_results.csv', index=False)
 
-    # df_result = pd.read_csv('./data/outputs/scopus_search_results.csv')
+	df_result = pd.read_csv('./data/outputs/scopus_search_results.csv')
 
-    df_result.fillna(value='', inplace=True)
+	df_result.fillna(value='', inplace=True)
 
-    # Define paths for the input data.
-    perso_data_path = './data/inputs/path_and_perso_data.json'
-    author_db_path = './data/inputs/auth_db.csv'
+	# Define paths for the input data.
+	perso_data_path = './data/inputs/path_and_perso_data.json'
+	author_db_path = './data/inputs/auth_db.csv'
 
-    # Define the stamps you want to add to the paper.
-    # If you don't want to add stamp: stamps = []
-    stamps = ['LGI-SR', 'CHAIRE-RRSC']
-    # stamps = [] # Add your stamps here
+	# Define the stamps you want to add to the paper.
+	# If you don't want to add stamp: stamps = []
+	stamps = ['LGI-SR', 'CHAIRE-RRSC']
+	# stamps = [] # Add your stamps here
 
-    # Load the scopus dataset.
-    auto_hal = AutomateHal(perso_data_path, author_db_path, stamps)
+	# Load the scopus dataset.
+	auto_hal = AutomateHal(perso_data_path=perso_data_path, 
+				author_db_path=author_db_path, stamps=stamps)
 
-    # For debugging: Only upload the first rowRange records.
-    # Comment this line if you want to upload all the records.
-    # rowRange=[2, 200]
-    auto_hal.debug_mode = True
-    auto_hal.upload_to_hal = False
+	# For debugging: Only upload the first rowRange records.
+	# Comment this line if you want to upload all the records.
+	rowRange=[0, 1]
+	auto_hal.debug_mode = True
+	auto_hal.upload_to_hal = False
 
-    # Address the record in the scopus dataset one by one.
-    n = len(df_result)
-    for i, doc in df_result.iterrows():
-        # if 'rowRange' in locals():
-            # # For debugging: Limit to first rowRange records.
-            # if i < min(rowRange) : continue
-            # elif i > max(rowRange) : break
-        
-        # Update the iteration index.
-        auto_hal.ite = i
-        print('{}/{} iterations: {}'.format(i+1, n, doc['eid']))
-        # Process the corresponding paper.
-        try:
-            auto_hal.process_one_paper(doc)
-        except Exception as error:
-            print('Error processing paper: {}. Log saved.'.format(doc['eid']))
-            print('Error is: {}'.format(error))
+	# Address the record in the scopus dataset one by one.
+	n = len(df_result)
+	for i, doc in df_result.iterrows():
+		if 'rowRange' in locals():
+			# For debugging: Limit to first rowRange records.
+			if i < min(rowRange) : continue
+			elif i > max(rowRange) : break
+		
+		# Update the iteration index.
+		auto_hal.ite = i
+		print('{}/{} iterations: {}'.format(i+1, n, doc['eid']))
+		# Process the corresponding paper.
+		try:
+			auto_hal.process_one_paper(doc)
+		except Exception as error:
+			print('Error processing paper: {}. Log saved.'.format(doc['eid']))
+			print('Error is: {}'.format(error))
+
+			# Save the log files.
+			auto_hal.dump_log_files()
+
+	# Save the log files.
+	auto_hal.dump_log_files()
