@@ -3,6 +3,6 @@
 data/inputs/path_and_perso_data.json
 data/outputs/TEI/
 # data/outputs/log.csv
-data/archived/
+data/archived
 my_ws/
-data/outputs/
+data/outputs
