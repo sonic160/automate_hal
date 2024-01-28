@@ -25,7 +25,7 @@ class AutomateHal:
 	- `allow_create_new_affiliation`: Boolean indicating whether to allow creating a new affiliation.
 	- `AuthDB`: A dictionary that stores user-defined data to refine the search results.
 	- `debug_log_file`: List to store debug log file paths.
-	- `debug_mode`: Boolean indicating whether to run in debug mode. If True, not verifying if existed in HAL.
+	- `debug_affiliation_search`: Boolean indicating whether to run in debug mode. If True, not verifying if existed in HAL.
 	- `hal_pswd`: HAL password for authentication.
 	- `hal_user_name`: HAL username for authentication.
 	- `ite`: Index of the current literature.
@@ -35,7 +35,7 @@ class AutomateHal:
 	- `report_entry`: A dictionary template for report entries.
 	- `report_file`: List to store report file paths.
 	- `stamps (list)`: A list of stamps to be used in the Tei files. Example: ['stamp_1', 'stamp_2']
-	- `upload_to_hal`: Boolean indicating whether to upload the document reference to the HAL repository.
+	- `debug_hal_upload`: Boolean indicating whether to upload the document reference to the HAL repository.
 	- `auths` (list): A list of dictionaries to store information about the authors. Each element is a dictionary containing the following keys:
 		- 'surname': Author's surname,
 		- 'initial': Author's initials,
@@ -76,10 +76,9 @@ class AutomateHal:
 
 	def __init__(self, perso_data_path='', author_db_path='', affil_db_path='',
 			  AuthDB='', mode='search_query', stamps=[], 
-			  debug_mode=False, upload_to_hal=True, allow_create_new_affiliation=False, 
-			  report_file=[], log_file=[], debug_log_file=[], auths=None, doc_data=None,
-			  affiliation_db=pd.DataFrame(columns=
-				['affil_name', 'status', 'valid_ids', 'affil_names_valid', 'invalid_ids', 'affil_names_invalid)'])):
+			  debug_affiliation_search=False, debug_hal_upload=True, allow_create_new_affiliation=False, 
+			  report_file=[], log_file=[], debug_log_file=[], auths=None, doc_data=None, report_entry=None,
+			  affiliation_db=None):
 		
 		''' ### Description
 
@@ -92,8 +91,8 @@ class AutomateHal:
 		- `AuthDB` (object): A dictionary that stores user-defined data to refine the search results. This can include additional information or preferences that the user wants to use in the search process.
 		- `mode` (str): Mode of operation, either 'search_query' or 'csv'. Determines how the AutomateHal object will process data.
 		- `stamps` (list): A list of stamps to be used in the Tei files. Example: `['stamp_1', 'stamp_2']`. These stamps are applied to the Tei files generated during the process.
-		- `debug_mode` (bool): Boolean indicating whether to run in debug mode. If True, the system will not verify if the data already exists in HAL.
-		- `upload_to_hal` (bool): Boolean indicating whether to upload the document reference to the HAL repository. If True, the system will upload relevant information to the HAL repository.
+		- `debug_affiliation_search` (bool): Boolean indicating whether to run in debug mode. If True, the system will not verify if the data already exists in HAL.
+		- `debug_hal_upload` (bool): Boolean indicating whether to upload the document reference to the HAL repository. If True, the system will upload relevant information to the HAL repository.
 		- `allow_create_new_affiliation` (bool): Boolean indicating whether to allow creating a new affiliation. If True, the system can create a new affiliation if needed.
 		- `report_file` (list): List to store report file paths. Each report file contains information about the processed data and outcomes.
 		- `log_file` (list): List to store log file paths. Log files contain general information and events during the execution of the AutomateHal object.
@@ -112,8 +111,8 @@ class AutomateHal:
 		- `AuthDB=''`
 		- `mode='search_query'`
 		- `stamps=[]`
-		- `debug_mode=False`
-		- `upload_to_hal=True`
+		- `debug_affiliation_search=False`
+		- `debug_hal_upload=True`
 		- `allow_create_new_affiliation=False`
 		- `report_file=[]`
 		- `log_file=[]`
@@ -130,23 +129,13 @@ class AutomateHal:
 		self.mode = mode # Mode of operation: search_query or csv
 		self.ite = -1 # Index of the current iterature.
 		self.stamps = stamps # List of stamps to be used in the Tei files.
-		self.debug_mode = debug_mode # Whether to run in debug mode. If True, not verifying if existed in HAL.
-		self.upload_to_hal = upload_to_hal # Whether to upload the documet reference to the HAL repository.
+		self.debug_affiliation_search = debug_affiliation_search # Whether to run in debug mode. If True, not verifying if existed in HAL.
+		self.debug_hal_upload = debug_hal_upload # Whether to upload the documet reference to the HAL repository.
 		self.output_path = './data/outputs/'
-		self.report_entry = {
-			'eid': '',
-			'doi': '',			
-			'doctype': '',
-			'title': '', 
-			'state': '',
-			'hal_matches': '',
-			'email_corr_auth': ''
-		}
 		self.report_file = report_file
 		self.log_file = log_file
 		self.debug_log_file = debug_log_file
 		self.additional_logs = []
-		self.affiliation_db = affiliation_db
 		self.affiliation_db_exist = False
 		self.affil_db_path = affil_db_path
 		self.allow_create_new_affiliation = allow_create_new_affiliation
@@ -155,7 +144,8 @@ class AutomateHal:
 		if not auths==None:
 			self.auths = auths
 		else:
-			self.auths = [] 
+			self.auths = []
+
 		# doc_data: A dictionary to store information about the current document.
 		if not doc_data==None:
 			self.doc_data = doc_data
@@ -177,6 +167,27 @@ class AutomateHal:
 				'publisher': ''
 			}
 
+		if report_entry == None:
+			self.report_entry = {
+				'eid': '',
+				'doi': '',			
+				'doctype': '',
+				'title': '',
+				'authors': '', 
+				'exit_state': '',
+				'hal_id': '',
+				'hal_url': '',
+				'emails_auths': ''
+			}
+		else:
+			self.report_entry = report_entry
+
+		if isinstance(affiliation_db, pd.DataFrame):
+			self.affiliation_db = affiliation_db
+		else:
+			self.affiliation_db = pd.DataFrame(columns=
+				['affil_name', 'status', 'valid_ids', 'affil_names_valid', 'invalid_ids', 'affil_names_invalid', 'eid', 'author', 'affil_city'])
+					
 		# Check mode:
 		if mode != 'search_query' and mode != 'csv':
 			raise ValueError('mode must be either "search_query" or "csv".')
@@ -228,34 +239,6 @@ class AutomateHal:
 			os.makedirs(self.output_path)
 
 
-	def save_to_report(self, file_name='report.csv'):
-		log_file = '{}{}'.format(self.output_path, file_name)
-		log_info = self.status_report
-
-		# Check if the file exists
-		file_exists = True
-		try:
-			with open(log_file, 'r') as file:
-				reader = csv.reader(file)
-				file_exists = bool(next(reader, None))
-		except FileNotFoundError:
-			file_exists = False
-
-		# Write the log entry to the CSV file	
-		with open(log_file, 'w', newline='', encoding="utf8") as file:
-			writer = csv.writer(file, delimiter=',')
-			
-			fieldnames = list(log_info.keys())
-			writer = csv.DictWriter(file, fieldnames=fieldnames)
-
-			# Write header if the file is empty
-			if not file_exists:
-				writer.writeheader()
-
-			# Write log entry
-			writer.writerow(log_info)
-
-
 	def hal_upload(self, filepath):
 		"""
 		Uploads TEI XML file to HAL using SWORD protocol.
@@ -266,16 +249,23 @@ class AutomateHal:
 		Returns: None
 		"""
 
-		doc_id = self.doc_data['eid']
-
 		url = 'https://api.archives-ouvertes.fr/sword/hal'
-		head = {
-			'Packaging': 'http://purl.org/net/sword-types/AOfr',
-			'Content-Type': 'text/xml',
-			'X-Allow-Completion': None
-		}
 
-		# X-test: 1
+		if self.debug_hal_upload:
+			# If debug mode, add X-test header: Only test for correctness without actually uploading.
+			head = {
+				'Packaging': 'http://purl.org/net/sword-types/AOfr',
+				'Content-Type': 'text/xml',
+				'X-Allow-Completion': None,
+				'X-test': '1'
+			}
+		else:
+			# If no debug, upload.
+			head = {
+				'Packaging': 'http://purl.org/net/sword-types/AOfr',
+				'Content-Type': 'text/xml',
+				'X-Allow-Completion': None
+			}
 
 		# If pdf: Content-Type: application/zip
 
@@ -289,14 +279,47 @@ class AutomateHal:
 
 		response = requests.post(url, headers=head, data=xmlcontent, auth=(self.hal_user_name, self.hal_pswd))
 		if response.status_code == 202:
-			# self.addRow(doc_id, "HAL upload: Success", '', '', '', '')
-			print("HAL upload: Success")
+			# Get the hal id and urls of the uploaded file.
+			hal_id, hal_url = self.process_hal_upload_response(response=response)
+			
+			print("Process finished: HAL upload: Success")
+			self.add_an_entry_to_log_file(self.log_file, "Process finished: HAL upload: Success")
+			self.update_dictionary_fields(self.report_entry, fields=['hal_id', 'hal_url'], values=[hal_id, hal_url])
 		else:
 			# self.addRow(doc_id, "HAL upload: Error", '', response.text, '', '')
 			print("HAL upload: Error")
 			print(response.text)
+			self.add_an_entry_to_log_file(self.log_file, "HAL upload fails!")
+			self.add_an_entry_to_log_file(self.log_file, response.text)
 
 		xmlfh.close()
+
+
+	def process_hal_upload_response(self, response):
+		''' ### Description
+		Get from the response of hal upload the id and url of the uploaded files.
+
+		### Parameters:
+		- response (str): Response of the HAL API.
+
+		### Returns:
+		- hal_id (str): HAL id of the uploaded file.
+		- url_in_hal (str): URL of the uploaded file in HAL.
+		
+		'''
+		# Your XML content
+		xml_content = response._content
+
+		# Parse the XML content
+		root = ET.fromstring(xml_content)
+
+		# Extract the <id> field
+		hal_id = root.find(".//{http://www.w3.org/2005/Atom}id").text
+
+		# Extract strings after href=
+		url_in_hal = [link.attrib.get('href', '') for link in root.findall(".//{http://www.w3.org/2005/Atom}link")]
+
+		return hal_id, url_in_hal
 
 
 	def reqHal(self, search_category='search', field='text', value='', search_query='',
@@ -346,7 +369,7 @@ class AutomateHal:
 
 		Returns:
 		list: List containing the number of items found and a list of HAL URIs.
-			Example: [2, ['uri1', 'uri2']]
+			Example: [2, [url, docid]]
 		"""
 
 		idInHal = [0, []]  # Number of items, list of URIs
@@ -356,15 +379,10 @@ class AutomateHal:
 			return idInHal
 
 		# Perform a HAL request to find documents by DOI
-		suffix='&fl=uri_s,title_s&wt=json'
+		suffix='&fl=uri_s,docid&wt=json'
 		reqId = self.reqHal(field='doiId_id', value=doi, suffix=suffix)
-		idInHal[0] = reqId[0]
 
-		# Append HAL URIs to the result list
-		for i in reqId[1]:
-			idInHal[1].append(i['uri_s'])
-
-		return idInHal
+		return reqId
 
 
 	def reqWithTitle(self, title):
@@ -378,25 +396,17 @@ class AutomateHal:
 		list: List containing the number of items found and a list of HAL URIs.
 			Example: [2, ['uri1', 'uri2']]
 		"""
-		titleInHal = [0, []]
 
 		title = re.sub(r'&amp;', ' ', title)
 		title = re.sub(r'[^a-zA-Z0-9 ]', '', title)		
 
 		# Perform a HAL request to find documents by title
-		search_query = 'title_t:(', title + ')'
-		suffix='&fl=uri_s,title_s&wt=json'
+		search_query = 'title_t:('+ title + ')'
+		suffix='&fl=uri_s,docid&wt=json'
 		reqTitle = self.reqHal(search_query=search_query, suffix=suffix)
 
-		# Append HAL URIs to the result list
-		for i in reqTitle[1]:
-			titleInHal[1].append(i['uri_s'])
-
-		titleInHal[0] = reqTitle[0]
-
-		# # Test with the second title
 		
-		return titleInHal
+		return reqTitle
 	
 
 	def reqHalStamp(self, stamp, start_year, end_year=2099):
@@ -458,6 +468,34 @@ class AutomateHal:
 							search_query=search_query, suffix=return_field)
 
 		return [num, docs]	
+
+
+	def update_dictionary_fields(self, input_dict, fields=[], values=[], reset_value=False):
+		''' ### Description
+		Given an input dictionary, this function will update some fields with given values.
+
+		### Parameters: 
+		- `input_dict` (dict): Dictionary to be updated.
+		- `fields` (list): List of fields to be updated.
+		- `values` (list): List of values to be added to the fields.				
+		- `reset_value` (bool): If True, the value of the field will be reset to an empty string. (default: False).)
+		'''
+
+		# Get all the filed names.
+		keys = input_dict.keys()
+
+		# If the field name matches keys, save the value.
+		# Otherwise, raise an error.
+		if not reset_value:
+			for key in fields:
+				if key in keys:
+					input_dict[key] = values.pop(0)
+				else:
+					raise ValueError('Error when writing to fields to a dictionary. field_name={} not found! \n Existing keys:{}'.format(key, keys))
+		else:
+			for key in keys:
+				input_dict[key] = ''
+
 
 
 	def add_an_entry_to_log_file(self, log_file, log_entry):
@@ -528,9 +566,59 @@ class AutomateHal:
 			save_as_json_file(additional_log, names_for_additional_logs[idx])
 
 	
+	def process_papers(self, df_result, row_range=[0, 200]):
+		''' ### Description
+		This is the entry point of the main function. It iterates over all the papers in the scopus search results, 
+		extract information, and upload it to HAL.
+
+		### Parameters: 
+		- `df_result` (DataFrame): DataFrame containing the search results from Scopus.		
+		- `row_range` (list): List of the range of rows to be processed. Default: [0, 200].
+		'''
+
+		# Address the record in the scopus dataset one by one.
+		n = len(df_result)
+		for i, doc in df_result.iterrows():
+			if 'row_range' in locals():
+				# For debugging: Limit to first rowRange records.
+				if i < min(row_range) : continue
+				elif i > max(row_range) : break
+			
+			# Update the iteration index.
+			self.ite = i
+			print('{}/{} iterations: {}'.format(i+1, n, doc['eid']))
+			self.add_an_entry_to_log_file(self.log_file, 
+				'{}/{} iterations: {}'.format(i+1, n, doc['eid']))
+			# Process the corresponding paper.
+			try:
+				self.process_one_paper(doc)
+			except Exception as error:
+				print('Error processing paper: {}. Log saved.'.format(doc['eid']))
+				self.add_an_entry_to_log_file(self.log_file, 
+				'Error is: {}'.format(error))
+
+				# Save the log files.
+				if self.debug_affiliation_search:
+					self.dump_log_files(additional_logs=[self.additional_logs], 
+						names_for_additional_logs=['./data/outputs/debug_logs/step_by_step_log.json'])
+				else:
+					self.dump_log_files()
+			# Log the report entry for the current paper.
+			self.add_an_entry_to_log_file(self.report_file, copy.deepcopy(self.report_entry))
+			self.update_dictionary_fields(input_dict=self.report_entry, reset_value=True)
+
+
+		# Save the log files.
+		if self.debug_affiliation_search:
+			self.dump_log_files(additional_logs=[self.additional_logs], 
+				names_for_additional_logs=['./data/outputs/debug_logs/step_by_step_log.json'])
+		else:
+			self.dump_log_files()
+
+
 	def process_one_paper(self, doc):
 		""" ### Description
-		Main function: Process each paper.
+		Process each paper.
 		- Parse data, get the needed information.
 		- Check for each author affiliation, if it exists in HAL already.
 		- Generate TEI-XML file.
@@ -543,18 +631,27 @@ class AutomateHal:
 
 		# Create a paper information treator.
 		paper_info_handler = TreatPaperInformation(
-			mode=self.mode, debug_mode=self.debug_mode, AuthDB=self.AuthDB,
-			log_file=self.log_file, debug_log_file=self.debug_log_file)
+			mode=self.mode, debug_affiliation_search=self.debug_affiliation_search, AuthDB=self.AuthDB,
+			log_file=self.log_file, debug_log_file=self.debug_log_file, report_entry=self.report_entry)
 
 		# Get the docids and document type.
 		paper_info_handler.extract_docids_and_doc_type(doc)
+		# Write to the report
+		self.update_dictionary_fields(self.report_entry, fields=['eid', 'doi', 'doctype', 'title', 'authors',],
+			values=[paper_info_handler.doc_data['eid'], paper_info_handler.doc_data['doi'], paper_info_handler.doc_data['doctype'], 
+			paper_info_handler.doc_data['title'], doc['author_names']])
 
 		# Verify if the paper is already in HAL.
-		if not self.debug_mode and paper_info_handler.verify_if_existed_in_hal(doc):
-			# self.log_file.append('End of operation: The paper is already in HAL.')
-			# self.report_entry['state'] = 'Already in HAL'
-			return
-		
+		if not self.debug_affiliation_search:
+			# Check if the paper is already in HAL.
+			if paper_info_handler.verify_if_existed_in_hal(doc):
+				self.add_an_entry_to_log_file(self.log_file, 'Process finished: Already exist in HAL.')
+				self.report_entry['exit_state'] = 'Already in HAL'
+				return
+		# If debug_affiliation_search is True, skip the hal existance check:
+		else:
+			self.add_an_entry_to_log_file(self.log_file, 'Debug_affiliation_search mode: Skip check existing in Hal.')
+			
 		# Extract & enrich authors data
 		ab = paper_info_handler.extract_author_infomation()
 
@@ -564,18 +661,22 @@ class AutomateHal:
 		# Complement the paper data based on the Abstract Retrival API.
 		paper_info_handler.extract_complementary_paper_information(ab)
 
+		# Write author emails to the report, if there are any.	
+		emails = [elem["mail"] for elem in paper_info_handler.auths if elem["mail"]]
+		self.report_entry['emails_auths'] = ", ".join(emails)
+
 		# Search the affiliations in HAL and get the ids.
 
 		# Create an affiliation search object.
 		affiliation_finder_hal = SearchAffilFromHal(auths=paper_info_handler.auths, doc_data=paper_info_handler.doc_data,
-			mode=paper_info_handler.mode, debug_mode=paper_info_handler.debug_mode, 
+			mode=paper_info_handler.mode, debug_affiliation_search=paper_info_handler.debug_affiliation_search, 
 			log_file=paper_info_handler.log_file, debug_log_file=paper_info_handler.debug_log_file,
 			affiliation_db=self.affiliation_db)
 		
 		# If not in debug mode, search the affiliations in HAL.
-		if not self.debug_mode:
+		if not self.debug_affiliation_search:
 			affiliation_finder_hal.extract_author_affiliation_in_hal()
-		else: # If in debug_mode, output step-by-step results in the search process.
+		else: # If in debug_affiliation_search, output step-by-step results in the search process.
 			affiliation_finder_hal.debug_show_search_steps = True
 			affiliation_finder_hal.extract_author_affiliation_in_hal()
 			self.additional_logs.append(affiliation_finder_hal.log_for_affil_unit)
@@ -587,7 +688,7 @@ class AutomateHal:
 		
 		# Create a TEI-XML producer.
 		tei_producer = GenerateXMLTree(doc=doc, auths=paper_info_handler.auths, doc_data=paper_info_handler.doc_data,
-			debug_mode=paper_info_handler.debug_mode, mode=paper_info_handler.mode, upload_to_hal=self.upload_to_hal, stamps=self.stamps, allow_create_new_affiliation=self.allow_create_new_affiliation)	
+			debug_affiliation_search=paper_info_handler.debug_affiliation_search, mode=paper_info_handler.mode, debug_hal_upload=self.debug_hal_upload, stamps=self.stamps, allow_create_new_affiliation=self.allow_create_new_affiliation)	
 		
 		# Generate the xml tree.
 		tei_producer.generate_tree()
@@ -595,9 +696,14 @@ class AutomateHal:
 		# Output the tree to the given dictionary.
 		tei_producer.export_tei_tree()
 
+		self.add_an_entry_to_log_file(self.log_file, 'TEI-XML file generated.')		
+
 		# Upload to HAL.
-		if self.upload_to_hal:
+		if not self.debug_affiliation_search: # debug_affiliation needs to be deactivated.
 			self.hal_upload(filepath=tei_producer.xml_path)
+			self.report_entry['exit_state'] = 'Added to HAL'
+		else:
+			self.report_entry['exit_state'] = 'TEI-XML file generated but not upload to HAL: In debug_affiliation_search mode.'
 
 
 
@@ -611,7 +717,7 @@ class TreatPaperInformation(AutomateHal):
 	All the attributes are inherent from parents
 	
 	'''
-	def __init__(self, mode='search_query', debug_mode=False, AuthDB=[], log_file=[], debug_log_file=[]):
+	def __init__(self, mode='search_query', debug_affiliation_search=False, AuthDB=[], log_file=[], debug_log_file=[], report_entry=[]):
 		'''
 		### `__init__` Method
 		#### Description:
@@ -619,19 +725,19 @@ class TreatPaperInformation(AutomateHal):
 
 		#### Parameters:
 		- `mode` (str): Mode of operation, either 'search_query' or 'csv'. Determines how the object will process data.
-		- `debug_mode` (bool): Boolean indicating whether to run in debug mode. If True, additional debugging information will be available.
+		- `debug_affiliation_search` (bool): Boolean indicating whether to run in debug mode. If True, additional debugging information will be available.
 		- `AuthDB` (list): A list of dictionaries that stores user-defined data to refine the search results. Each dictionary may contain additional information or preferences for the search process.
 		- `log_file` (list): List to store log file paths. Log files contain general information and events during the execution of the object.
 		- `debug_log_file` (list): List to store debug log file paths. Debug log files contain detailed debugging information for troubleshooting.	
 
 		#### Defaults:
 		- `mode='search_query'`
-		- `debug_mode=False`
+		- `debug_affiliation_search=False`
 		- `AuthDB=[]`
 		- `log_file=[]`
 		- `debug_log_file=[]`
 		'''
-		super().__init__(mode=mode, debug_mode=debug_mode, AuthDB=AuthDB, log_file=log_file, debug_log_file=debug_log_file)		 
+		super().__init__(mode=mode, debug_affiliation_search=debug_affiliation_search, AuthDB=AuthDB, log_file=log_file, debug_log_file=debug_log_file, report_entry=report_entry)		 
 	
 
 	def debug_affiliation_hal(self):
@@ -825,20 +931,10 @@ class TreatPaperInformation(AutomateHal):
 		- values (list): A list of values to be updated.
 		'''
 		doc_data = self.doc_data
+
+		self.update_dictionary_fields(doc_data, field_names, values)
 		
-		# Get all the filed names.
-		keys = doc_data.keys()
-
-		# If the field name matches keys, save the value.
-		# Otherwise, raise an error.
-		for key in field_names:
-			if key in keys:
-				doc_data[key] = values.pop(0)
-			else:
-				raise ValueError('Error when writing to self.doc_data. field_name={} not found!'.format(key))
-
-
-
+		
 	def extract_docids_and_doc_type(self, doc):
 		'''
 		Extract the document ID and document type from the input data.
@@ -907,8 +1003,8 @@ class TreatPaperInformation(AutomateHal):
 		
 		if idInHal[0] > 0:
 			print(f"already in HAL")
-			self.report_entry['state'] = 'already in hal'
-			self.report_entry['hal_matches'] = idInHal[1]
+			self.report_entry['hal_url'] = idInHal[1][0]['uri_s']
+			self.report_entry['hal_id'] = idInHal[1][0]['docid']
 
 			return True
 		else: # Then, check with title
@@ -920,8 +1016,8 @@ class TreatPaperInformation(AutomateHal):
 				ValueError("'mode' must be either 'search_query' or 'csv'!")
 			if titleInHal[0] > 0:
 				print(f"already in HAL")
-				self.report_entry['state'] = 'already in hal'
-				self.report_entry['hal_matches'] = idInHal[1]
+				self.report_entry['hal_url'] = titleInHal[1][0]['uri_s']
+				self.report_entry['hal_id'] = titleInHal[1][0]['docid']
 
 				return True
 			
@@ -955,7 +1051,7 @@ class SearchAffilFromHal(AutomateHal):
 
 
 	def __init__(self, auths=None, doc_data=None,
-			  mode='search_query', debug_mode=False, log_file =[], 
+			  mode='search_query', debug_affiliation_search=False, log_file =[], 
 			  debug_log_file=[], affiliation_db=None):
 		'''
 		### `__init__` Method
@@ -967,7 +1063,7 @@ class SearchAffilFromHal(AutomateHal):
 		- `auths` (list): A list of dictionaries containing information about authors. Each dictionary represents an author and may include keys such as 'surname', 'initial', 'forename', 'scopusId', 'orcid', etc.
 		- `doc_data` (dict): A dictionary containing information about the current document, including keys such as 'eid', 'doi', 'doctype', 'title', 'funding', 'language', 'isbn', 'confname', 'confdate', 'conflocation', 'startingPage', 'endingPage', and 'publisher'.
 		- `mode` (str): Mode of operation, either 'search_query' or 'csv'. Determines how the object will process data.
-		- `debug_mode` (bool): Boolean indicating whether to run in debug mode. If True, additional debugging information will be availabl		
+		- `debug_affiliation_search` (bool): Boolean indicating whether to run in debug mode. If True, additional debugging information will be availabl		
 		- `log_file` (list): List to store log file paths. Log files contain general information and events during the execution of the object.
 		- `debug_log_file` (list): List to store debug log file paths. Debug log files contain detailed debugging information for troubleshooting.
 		- `affiliation_db` (object): An optional parameter representing an affiliation database. It is used to store and retrieve affiliation data.
@@ -976,14 +1072,14 @@ class SearchAffilFromHal(AutomateHal):
 		- `auths=[]`
 		- `doc_data={}`
 		- `mode='search_query'`
-		- `debug_mode=False`
+		- `debug_affiliation_search=False`
 		- `AuthDB=[]`
 		- `log_file=[]`
 		- `debug_log_file=[]`
 		- `affiliation_db=None`
 		'''
 
-		super().__init__(mode=mode, debug_mode=debug_mode, log_file=log_file, 
+		super().__init__(mode=mode, debug_affiliation_search=debug_affiliation_search, log_file=log_file, 
 				   debug_log_file=debug_log_file, affiliation_db=affiliation_db, auths=auths, doc_data=doc_data)
 		
 		# Private attributes
@@ -1045,6 +1141,7 @@ class SearchAffilFromHal(AutomateHal):
 		added_elements_string = ', '.join(added_elements)
 
 		return added_elements_string
+	
 
 	def update_historical_database(self):
 		'''
@@ -1058,6 +1155,9 @@ class SearchAffilFromHal(AutomateHal):
 		# Get the results after the current iteration. Read from self.auths, which is just updated.
 		auth_idx = self.current_author_idx
 		auth = self.auths[auth_idx]
+		eid = self.doc_data['eid']
+		affil_city = self.current_affil_city
+		auth_name = '{} {}'.format(self.current_author_name['forename'], self.current_author_name['surname'])
 
 		new_row = {
 			'affil_name': affil_name,
@@ -1065,7 +1165,10 @@ class SearchAffilFromHal(AutomateHal):
 			'valid_ids': self.hal_ids_current_affil,
 			'affil_names_valid': self.hal_name_current_affil,
 			'invalid_ids': self.hal_ids_current_affil_invalid,
-			'affil_names_invalid)': self.hal_name_current_affil_invalid
+			'affil_names_invalid': self.hal_name_current_affil_invalid,
+			'eid': eid,
+			'author': auth_name, 
+			'affil_city': affil_city
 		}
 
 		df_affiliation_db.loc[len(df_affiliation_db)] = new_row
@@ -1085,6 +1188,22 @@ class SearchAffilFromHal(AutomateHal):
 		# Find in the history.
 		df_result = df_search_history[df_search_history['affil_name'].str.lower() == affil_name.lower()]
 		
+		# Verification conditions.
+		eid = self.doc_data['eid']
+		affil_city = self.current_affil_city
+		auth_name = '{} {}'.format(self.current_author_name['forename'], self.current_author_name['surname'])
+
+		df_eid = df_result[df_result['eid']==eid]
+		df_city = df_result[df_result['affil_city']==affil_city]
+		df_auth = df_result[df_result['author']==auth_name]
+
+		if len(df_auth)>0:
+			df_result = df_auth
+		elif len(df_eid)>0:
+			df_result = df_eid
+		else:
+			df_result = df_city
+
 		# If found, get the status.
 		if len(df_result)==0:
 			return False
@@ -1176,7 +1295,7 @@ class SearchAffilFromHal(AutomateHal):
 
 				# Save the current ids and names.
 				self.hal_ids_current_affil.append(affil_dict['docid'])
-				self.hal_name_current_affil.append(affil_dict['label_s'])
+				self.hal_name_current_affil.append(affil_dict['label_s_ori'])
 				if isinstance(parent_ids, list):
 					self.hal_ids_current_affil.extend(parent_ids)
 					self.hal_name_current_affil.extend(parent_names)
@@ -1604,6 +1723,7 @@ class SearchAffilFromHal(AutomateHal):
 					df_affli_found = pd.concat([df_affli_found, pd.DataFrame([search_result[1][i]])], ignore_index=True)
 
 			# Preprocess df_affli_found['label_s'] and affil_name: Lower case and french words -> english words.
+			df_affli_found['label_s_ori'] = df_affli_found['label_s']
 			df_affli_found['label_s'] = df_affli_found['label_s'].apply(unidecode).str.lower()
 			affil_name = unidecode(affil_name).lower()
 			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'Original results after preprocessing')
@@ -1776,8 +1896,8 @@ class SearchAffilFromHal(AutomateHal):
 
 
 class GenerateXMLTree(AutomateHal):
-	def __init__(self, doc, auths=None, doc_data=None, debug_mode=False, upload_to_hal=True, mode='search query', stamps=[], allow_create_new_affiliation=False):
-		super().__init__(mode=mode, debug_mode=debug_mode, upload_to_hal=upload_to_hal, stamps=stamps, 
+	def __init__(self, doc, auths=None, doc_data=None, debug_affiliation_search=False, debug_hal_upload=False, mode='search query', stamps=[], allow_create_new_affiliation=False):
+		super().__init__(mode=mode, debug_affiliation_search=debug_affiliation_search, debug_hal_upload=debug_hal_upload, stamps=stamps, 
 				   auths=auths, doc_data=doc_data, allow_create_new_affiliation=allow_create_new_affiliation)
 
 		self.doc_data_for_tei = {
@@ -1830,7 +1950,7 @@ class GenerateXMLTree(AutomateHal):
 
 			# For debugging onle: Print also affiliation name.
 			# Remove this after debugging!						
-			if self.debug_mode and not self.upload_to_hal:
+			if self.debug_affiliation_search:
 				try:
 					search_result = self.reqHalRef(ref_name='structure', 
 								search_query='(docid:{})'.format(affil_id), 
@@ -2035,12 +2155,14 @@ class GenerateXMLTree(AutomateHal):
 				if req["response"]["numFound"] > 9:  # Retrieve domain from journal if there are more than 9 occurrences
 					doc_data_for_tei['domain'] = req['facet_counts']['facet_fields']['domainAllCode_s'][0]
 			except:
-				print('\tHAL API did not work for retrieving domain with journal')
+				print('\t Warning: HAL API did not work for retrieving domain with journal')
+				self.add_an_entry_to_log_file(self.log_file, 'Warning: HAL API did not work for retrieving domain with journal')
 				pass
 
 		if not doc_data_for_tei['domain']:
 			doc_data_for_tei['domain'] = 'spi' # Default: Engineering / physics
-			print('\t!! Domain not found: Defaulted to "sdv". Please verify its relevance.')
+			print('\t Warning: Domain not found: Defaulted to "sdi". Please verify its relevance.')
+			self.add_an_entry_to_log_file(self.log_file, 'Warning: Domain not found: Defaulted to "sdi". Please verify its relevance.')
 
 
 	def search_journal_in_hal(self, doc):
@@ -2156,10 +2278,6 @@ class GenerateXMLTree(AutomateHal):
 		
 		self.xml_path = xml_path
 
-		# emails = [elem["mail"] for elem in self.auths if elem["mail"]]
-		# self.addRow(doc_id, "TEI generated", '', '', '', ", ".join(emails))
-
-
 
 	def generate_tree(self):
 		'''
@@ -2170,7 +2288,7 @@ class GenerateXMLTree(AutomateHal):
 		try:
 			self.xml_tree = ET.parse('./data/tei_modele.xml')			
 		except:
-			print('Error: XML file not found!')
+			raise ValueError('Error: XML file not found!')
 
 		self.xmi_tree_root = self.xml_tree.getroot()
 
@@ -2521,8 +2639,8 @@ if __name__ == '__main__':
 	# Define paths for the input data.
 	perso_data_path = './data/inputs/path_and_perso_data.json'
 	author_db_path = './data/inputs/auth_db.csv'
-	affil_db_path = './data/inputs/affiliation_db.csv'
-	# affil_db_path = ''
+	# affil_db_path = './data/inputs/affiliation_db.csv'
+	affil_db_path = ''
 
 	# Define the stamps you want to add to the paper.
 	# If you don't want to add stamp: stamps = []
@@ -2535,34 +2653,10 @@ if __name__ == '__main__':
 
 	# For debugging: Only upload the first rowRange records.
 	# Comment this line if you want to upload all the records.
-	rowRange=[0, 10]
+	row_range=[0, 10]
 
-	auto_hal.debug_mode = True
-	auto_hal.upload_to_hal = False
-	auto_hal.allow_create_new_affiliation = True
+	auto_hal.debug_affiliation_search = True
+	auto_hal.debug_hal_upload = True
+	auto_hal.allow_create_new_affiliation = False
 
-	# Address the record in the scopus dataset one by one.
-	n = len(df_result)
-	for i, doc in df_result.iterrows():
-		if 'rowRange' in locals():
-			# For debugging: Limit to first rowRange records.
-			if i < min(rowRange) : continue
-			elif i > max(rowRange) : break
-		
-		# Update the iteration index.
-		auto_hal.ite = i
-		print('{}/{} iterations: {}'.format(i+1, n, doc['eid']))
-		# Process the corresponding paper.
-		try:
-			auto_hal.process_one_paper(doc)
-		except Exception as error:
-			print('Error processing paper: {}. Log saved.'.format(doc['eid']))
-			print('Error is: {}'.format(error))
-
-			# Save the log files.
-			auto_hal.dump_log_files(additional_logs=[auto_hal.additional_logs, auto_hal.debug_log_file], 
-				names_for_additional_logs=['./data/outputs/debug_logs/step_by_step_log.json'])
-
-	# Save the log files.
-	auto_hal.dump_log_files(additional_logs=[auto_hal.additional_logs], 
-		names_for_additional_logs=['./data/outputs/debug_logs/step_by_step_log.json'])
+	auto_hal.process_papers(df_result=df_result, row_range=row_range)
