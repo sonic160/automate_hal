@@ -1453,6 +1453,8 @@ class SearchAffilFromHal(AutomateHal):
 					df_affli_found = df_affli_found[condition_1 | condition_2 | condition_3]
 				else:
 					df_affli_found = df_affli_found[condition_1 | condition_2]
+			else:
+				df_affli_found = pd.DataFrame()
 			
 		return df_affli_found
 	
@@ -1672,10 +1674,10 @@ class SearchAffilFromHal(AutomateHal):
 					aut_affil_list.remove(part)
 					aut_affil_list.append(part)
 		
-		# In case "department of law, order, and XXX", this will generate too many items.
-		# If too many sub items, only take the first one.
-		if len(aut_affil_list)>=6:
-			aut_affil_list = aut_affil_list[-1:]
+		# # In case "department of law, order, and XXX", this will generate too many items.
+		# # If too many sub items, only take the first one.
+		# if len(aut_affil_list)>=6:
+		# 	aut_affil_list = aut_affil_list[-1:]
 
 		return aut_affil_list
 	
@@ -1905,8 +1907,11 @@ class SearchAffilFromHal(AutomateHal):
 			if match:
 				# Extract the content inside the parentheses
 				affi_acronym = match.group(1)
+				# Remove acronym from the original string.
 				aut_affils[index] = aut_affils[index].replace(' ({})'.format(affi_acronym), '')
-				# aut_affils[index] += ', ' + affi_acronym
+				# Add the acronym to the end of the string
+				if 'fondation' not in aut_affils[index]: # Exception: If "fondation edf..."
+					aut_affils[index] += ', ' + affi_acronym
 
 			return aut_affils[index]
 		
@@ -2671,7 +2676,7 @@ if __name__ == '__main__':
 	# search_query = 'AU-ID(56609542700) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Yanfu Li
 	# search_query = 'AU-ID(14049106600) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Nicola Pedroni
 	# search_query = 'AU-ID(7102745133) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Anne Barros
-	search_query = 'EID (2-s2.0-85110312423)'
+	search_query = 'EID (2-s2.0-85150020082)'
 
 	results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
 	df_result = pd.DataFrame(results.results)
