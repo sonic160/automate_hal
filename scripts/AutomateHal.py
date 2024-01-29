@@ -1147,6 +1147,7 @@ class SearchAffilFromHal(AutomateHal):
 		'''
 		Add the results from the current iteration to the historical database.
 		'''
+
 		# Get the database and affiliation name
 		df_affiliation_db = self.affiliation_db
 		affil_idx = self.current_affil_idx
@@ -1159,19 +1160,20 @@ class SearchAffilFromHal(AutomateHal):
 		affil_city = self.current_affil_city
 		auth_name = '{} {}'.format(self.current_author_name['forename'], self.current_author_name['surname'])
 
-		new_row = {
-			'affil_name': affil_name,
-			'status': auth['affil_status'][affil_idx],
-			'valid_ids': self.hal_ids_current_affil,
-			'affil_names_valid': self.hal_name_current_affil,
-			'invalid_ids': self.hal_ids_current_affil_invalid,
-			'affil_names_invalid': self.hal_name_current_affil_invalid,
-			'eid': eid,
-			'author': auth_name, 
-			'affil_city': affil_city
-		}
+		if len(auth['affil_status'])>0:
+			new_row = {
+				'affil_name': affil_name,
+				'status': auth['affil_status'][affil_idx],
+				'valid_ids': self.hal_ids_current_affil,
+				'affil_names_valid': self.hal_name_current_affil,
+				'invalid_ids': self.hal_ids_current_affil_invalid,
+				'affil_names_invalid': self.hal_name_current_affil_invalid,
+				'eid': eid,
+				'author': auth_name, 
+				'affil_city': affil_city
+			}
 
-		df_affiliation_db.loc[len(df_affiliation_db)] = new_row
+			df_affiliation_db.loc[len(df_affiliation_db)] = new_row
 
 
 	def search_from_historical_database(self):
@@ -1186,7 +1188,10 @@ class SearchAffilFromHal(AutomateHal):
 		auth_idx = self.current_author_idx
 
 		# Find in the history.
-		df_result = df_search_history[df_search_history['affil_name'].str.lower() == affil_name.lower()]
+		if isinstance(affil_name, str): 
+			df_result = df_search_history[df_search_history['affil_name'].str.lower() == affil_name.lower()]
+		else: # If affili_name is not a string, return directly.
+			return False
 		
 		# Verification conditions.
 		eid = self.doc_data['eid']
@@ -1252,9 +1257,6 @@ class SearchAffilFromHal(AutomateHal):
 		# Preprocess each auth affiliation.
 		aut_affil = self.preprocess_affiliation_name(aut_affils, affil_idx, affil_country)									
 
-		# Generate affiliation list.
-		aut_affil_list = self.generate_affil_list(aut_affil)
-
 		# Initially set to be not existed.
 		affi_exist_in_hal = False				
 		parent_affil_id = [] # Store all the parent affiliations. Use to exclude child affilation with the same name.
@@ -1264,18 +1266,31 @@ class SearchAffilFromHal(AutomateHal):
 		self.hal_name_current_affil = []
 		self.hal_name_current_affil_invalid = []
 
+		# Generate affiliation list.
+		if aut_affil == None: # If aut_affil is None, return with default value.
+			return
+		else:
+			aut_affil_list = self.generate_affil_list(aut_affil)
+
 		# Start to search from the right-most unit (largest):
 		for affil_unit in reversed(aut_affil_list):						            											
-			affi_unit_exist_in_hal = False											
+			affi_unit_exist_in_hal = False										
 
 			# Search for the valid affliations in HAL.
-			try:
+			try:				
 				search_result = self.reqHalRef(ref_name='structure', 
 							search_query='(text:({}) valid_s:"VALID")'.format(affil_unit), 
 							return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
 			except:
-				search_result = [0]
-				pass
+				# If problems, remove the symbols in affil_unit and try again.
+				affil_unit = re.sub(r'[^a-zA-Z0-9\s]', '', affil_unit)
+				try:				
+					search_result = self.reqHalRef(ref_name='structure', 
+							search_query='(text:({}) valid_s:"VALID")'.format(affil_unit), 
+							return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
+				except:	
+					search_result = [0]
+					pass
 
 			# Get the best-matched one and add it to the xml-tree.
 			affi_unit_exist_in_hal, affil_dict = self.pick_affiliation_from_search_results(search_result, affil_country, affil_city, aut=author_name, affil_name=affil_unit, parent_affil_id=parent_affil_id)
@@ -1322,7 +1337,7 @@ class SearchAffilFromHal(AutomateHal):
 				except:
 					search_result = [0]
 					pass
-				affi_exist_in_hal, affil_dict = self.pick_affiliation_from_search_results(search_result, affil_name=aut_affil, invalid_affil=True)
+				affi_exist_in_hal, affil_dict = self.pick_affiliation_from_search_results(search_result, affil_country, affil_city, aut=author_name, affil_name=affil_unit, invalid_affil=True)
 				
 				# If exist in HAL but not valid.
 				if affi_exist_in_hal:
@@ -1397,17 +1412,17 @@ class SearchAffilFromHal(AutomateHal):
 
 	# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
 	# We count the number of parent institutions. If too many, this indicates that it is better to look at parent affiliations.
-	def filter_by_affil_city(self, df_affli_found, affil_city):
+	def filter_by_affil_city(self, df_affli_found, affil_city, exact_filter=False):
 		'''
 		Given an input DataFrame of possible affiliations, find the best match for the specified pattern. 
 
 		Parameters:
 			- df_affli_found (pd.DataFrame): The DataFrame of possible affiliations.
 			- affil_city (str): The city of the affiliation to be added. 
+			- exact_filter (bool): If True, only return the matched ones. If false (default), return also the nans.
 
 		Return:
-			- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False.
-			- affil_dict (dict): A dictionary of the affiliation of the best match found.
+			- df_affli_found (pd.DataFrame): The DataFrame of possible affiliations.
 		'''
 
 		# Custom function to clean and format the address
@@ -1434,7 +1449,10 @@ class SearchAffilFromHal(AutomateHal):
 				# Condition 3: NaN in the address
 				condition_3 = pd.isna(df_affli_found['address_s'])	
 
-				df_affli_found = df_affli_found[condition_1 | condition_2 | condition_3]
+				if not exact_filter:
+					df_affli_found = df_affli_found[condition_1 | condition_2 | condition_3]
+				else:
+					df_affli_found = df_affli_found[condition_1 | condition_2]
 			
 		return df_affli_found
 	
@@ -1575,21 +1593,29 @@ class SearchAffilFromHal(AutomateHal):
 		'''
 		if not df_affli_found.empty:
 			# If there is exact matched affil name:
-			df_exact = df_affli_found[df_affli_found['label_s'].str.lower()==affil_name.lower()]
+			column_to_compare = df_affli_found['label_s'].str.lower().replace('&', 'and')
+			target_string = affil_name.lower().replace('&', 'and')
+
+			df_exact = df_affli_found[column_to_compare==target_string]
 			
 			# affil name [XXX]
-			pattern = re.compile(r'{} \[.*\]'.format(affil_name.lower()))
+			pattern = re.compile(r'{} \[.*\]'.format(target_string.lower()))
 			df_exact = pd.concat([
 				df_exact,
-				df_affli_found[[element is not None for element in df_affli_found['label_s'].str.lower().apply(pattern.match)]]
+				df_affli_found[[element is not None for element in column_to_compare.apply(pattern.match)]]
 			])
 
 			# affil name [City name]
 			if pd.notna(affil_city):
 				df_exact = pd.concat([
 						df_exact,
-						df_affli_found[df_affli_found['label_s'].str.lower()=='{} [{}]'.format(affil_name.lower(), affil_city.lower())],	  
+						df_affli_found[column_to_compare=='{} [{}]'.format(target_string.lower(), affil_city.lower())],	  
 					])
+				
+			# Check for duplicated values in the specified column
+			duplicates_mask = df_exact['label_s'].duplicated(keep=False)
+			# Keep only the rows where the 'label_s' column has unique values
+			df_exact = df_exact[~duplicates_mask]
 		else:
 			df_exact = df_affli_found
 			
@@ -1622,6 +1648,8 @@ class SearchAffilFromHal(AutomateHal):
 				'title': self.doc_data['title'],
 				'author': '{} {}'.format(aut['forename'], aut['surname']),
 				'affiliation_name': affil_name,
+				'affiliation_country': self.current_affil_country,
+				'affiliation_city': self.current_affil_city,
 				'filter step': filter_step,
 				'df_affil_found': df_affil_found.to_json(orient='records', lines=True),
 				'len(df_affil_found)': len(df_affil_found)
@@ -1737,8 +1765,8 @@ class SearchAffilFromHal(AutomateHal):
 				if not df_exact.empty:
 					return self.return_callback_func(affi_exist_in_hal=True, best_affil_dict=df_exact.iloc[0].to_dict())
 				else:
-					return self.return_callback_func()			
-				
+					return self.return_callback_func()
+
 			# If the current parent affil list is not empty: Filter based on parent affiliations.
 			df_affli_found = self.filter_by_parent_affil(df_affli_found, parent_affil_id)
 			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_parent_affil')
@@ -1792,10 +1820,15 @@ class SearchAffilFromHal(AutomateHal):
 			
 			# If less than three affiliation remains, take the shortest one. Otherwise, return not found.
 			if len(df_affli_found) <= 3 and not df_affli_found.empty:
-				affi_exist_in_hal = True
-				best_affil_dict = df_affli_found.iloc[0].to_dict()
-
-				return self.return_callback_func(affi_exist_in_hal, best_affil_dict)
+				# Check the affiliation city is an exact match but not nan.
+				if affil_city:
+					df_affli_found = self.filter_by_affil_city(df_affli_found, affil_city, exact_filter=True)
+					if len(df_affli_found)>0:
+						affi_exist_in_hal = True
+						best_affil_dict = df_affli_found.iloc[0].to_dict()
+						return self.return_callback_func(affi_exist_in_hal, best_affil_dict)
+				if not affi_exist_in_hal:
+					return self.return_callback_func()
 			else:
 				self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'final evaluation. Why did not match.')
 				return self.return_callback_func()	
@@ -1856,8 +1889,9 @@ class SearchAffilFromHal(AutomateHal):
 			if affil_country == 'fr' or affil_country == '':
 				if 'university' in aut_affil.lower():
 					index_university = aut_affil.lower().find('university')
-					index_comma = aut_affil.lower().find(',', index_university)
-					old_aut_affil = aut_affil.lower()[index_university:index_comma].strip()
+					idx_begin = aut_affil.lower().find(',', 0, index_university)
+					idx_end = aut_affil.lower().find(',', index_university)
+					old_aut_affil = aut_affil.lower()[idx_begin+1:idx_end].strip() if idx_end != -1 else aut_affil.lower()[idx_begin+1:].strip()
 					new_aut_affil = old_aut_affil.replace('university', 'universite')
 					new_aut_affil = new_aut_affil.replace('of', '')
 					aut_affils[index] += ', ' + new_aut_affil
@@ -1872,16 +1906,18 @@ class SearchAffilFromHal(AutomateHal):
 				# Extract the content inside the parentheses
 				affi_acronym = match.group(1)
 				aut_affils[index] = aut_affils[index].replace(' ({})'.format(affi_acronym), '')
-				aut_affils[index] += ', ' + affi_acronym
+				# aut_affils[index] += ', ' + affi_acronym
 
-			return aut_affil
+			return aut_affils[index]
 		
 		##############
 
 		# Start of the main operation.
-
-		# Remove the ';' at the end of the affiliation.
-		aut_affil = aut_affils[index] 
+		aut_affil = aut_affils[index]
+		if not isinstance(aut_affil, str):
+			return aut_affil
+		
+		# Remove the ';' at the end of the affiliation. 
 		if aut_affil.endswith('; '):
 			aut_affil = aut_affil.rstrip('; ')
 
@@ -2070,7 +2106,10 @@ class GenerateXMLTree(AutomateHal):
 			doc_data_for_tei['volume'] = doc['volume']
 			doc_data_for_tei['page_range'] = doc['pageRange']
 			doc_data_for_tei['cover_date'] = doc['coverDate']
-			doc_data_for_tei['kw_list'] = doc['authkeywords'].split(" | ")
+			if isinstance(doc['authkeywords'], str):
+				doc_data_for_tei['kw_list'] = doc['authkeywords'].split(" | ")
+			else:
+				doc_data_for_tei['kw_list'] = ''
 			abstract = doc['description']
 		elif self.mode =='csv':
 			doc_data_for_tei['title'] = doc['Title']
@@ -2082,7 +2121,10 @@ class GenerateXMLTree(AutomateHal):
 			else : 
 				doc_data_for_tei['page_range'] = ""
 			doc_data_for_tei['cover_date'] = doc['Year']
-			doc_data_for_tei['kw_list'] = doc['Author Keywords'].split(" ; ")
+			if isinstance(doc['authkeywords'], str):
+				doc_data_for_tei['kw_list'] = doc['Author Keywords'].split(" ; ")
+			else:
+				doc_data_for_tei['kw_list'] = ''
 			abstract = doc['Abstract']
 		else: 
 			ValueError('Mode value error!')
@@ -2091,7 +2133,10 @@ class GenerateXMLTree(AutomateHal):
 		doc_data_for_tei['abstract'] = False if abstract.startswith('[No abstr') else abstract[: abstract.find('©') - 1]
 
 		# Match language
-		scopus_lang = self.doc_data['language'].split(";")[0]
+		if isinstance(self.doc_data['language'], str):
+			scopus_lang = self.doc_data['language'].split(";")[0]
+		else:
+			scopus_lang = 'und'
 		with open("./data/matchLanguage_scopus2hal.json") as fh:
 			matchlang = json.load(fh)
 			doc_data_for_tei["language"] = matchlang.get(scopus_lang, "und")
@@ -2626,15 +2671,14 @@ if __name__ == '__main__':
 	# search_query = 'AU-ID(56609542700) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Yanfu Li
 	# search_query = 'AU-ID(14049106600) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Nicola Pedroni
 	# search_query = 'AU-ID(7102745133) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Anne Barros
-	# search_query = 'EID (2-s2.0-85178664213)'
+	search_query = 'EID (2-s2.0-85110312423)'
 
-	# results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
-	# df_result = pd.DataFrame(results.results)
+	results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
+	df_result = pd.DataFrame(results.results)
 	# df_result.to_csv('./data/outputs/scopus_search_results.csv', index=False)
 
-	df_result = pd.read_csv('./data/outputs/scopus_search_results.csv')
-
-	df_result.fillna(value='', inplace=True)
+	# df_result = pd.read_csv('./data/outputs/scopus_search_results_lgi.csv')
+	# df_result.fillna(value='', inplace=True)
 
 	# Define paths for the input data.
 	perso_data_path = './data/inputs/path_and_perso_data.json'
@@ -2644,8 +2688,8 @@ if __name__ == '__main__':
 
 	# Define the stamps you want to add to the paper.
 	# If you don't want to add stamp: stamps = []
-	stamps = ['LGI-SR', 'CHAIRE-RRSC']
-	# stamps = [] # Add your stamps here
+	# stamps = ['LGI-SR', 'CHAIRE-RRSC']
+	stamps = [] # Add your stamps here
 
 	# Load the scopus dataset.
 	auto_hal = AutomateHal(perso_data_path=perso_data_path, affil_db_path=affil_db_path,
@@ -2653,7 +2697,7 @@ if __name__ == '__main__':
 
 	# For debugging: Only upload the first rowRange records.
 	# Comment this line if you want to upload all the records.
-	row_range=[0, 10]
+	row_range=[0, 500]
 
 	auto_hal.debug_affiliation_search = True
 	auto_hal.debug_hal_upload = True
