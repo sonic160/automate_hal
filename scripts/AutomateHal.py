@@ -1647,44 +1647,40 @@ class SearchAffilFromHal(AutomateHal):
 		'''
 		if not df_affli_found.empty:
 			# Define similar patterns.
-			column_to_compare = df_affli_found['label_s'].str.lower()
-			column_to_compare = pd.Series([re.sub(r'\b(de |of )\b', '', item) for item in column_to_compare])
-			column_to_compare = pd.Series([re.sub(r'\b(&)\b', 'and', item) for item in column_to_compare])
-			target_string = affil_name.lower().replace('&', 'and')
-			target_string = re.sub(r'\b(de |of )\b', '', target_string)
+			column_to_compare = df_affli_found['label_s']			
 			
 			# If there is exact matched affil name:
-			df_exact = df_affli_found.reset_index().loc[column_to_compare==target_string, :]
+			df_exact = df_affli_found.loc[column_to_compare==affil_name, :]
 			
 			# affil name [XXX]
-			# pattern = re.compile(r'{} \[.*\]'.format(target_string.lower()))
-			# df_exact = pd.concat([
-			# 	df_exact,
-			# 	df_affli_found[[element is not None for element in column_to_compare.apply(pattern.match)]]
-			# ])
+			pattern = re.compile(r'{} \[.*\]'.format(affil_name))
+			df_exact = pd.concat([
+				df_exact,
+				df_affli_found[[element is not None for element in column_to_compare.apply(pattern.match)]]
+			])
 
 			# affil name [City name]
 			if pd.notna(affil_city):
 				df_exact = pd.concat([
 						df_exact,
-						df_affli_found.reset_index()[column_to_compare=='{} [{}]'.format(target_string.lower(), affil_city.lower())],	  
+						df_affli_found.reset_index()[column_to_compare=='{} [{}]'.format(affil_name.lower(), affil_city.lower())],	  
 					])
 			
-			# don't look at affil_city
-			pattern = re.compile(r'{} \[(.*?)\]'.format(target_string.lower()))
-			flag = []
-			for idx, element in enumerate(column_to_compare.apply(pattern.match)):
-				if element is not None and 'cleaned address_s' in df_affli_found.columns:
-					if isinstance(df_affli_found.iloc[idx]['cleaned address_s'], str):
-						if element.group(1) not in df_affli_found.iloc[idx]['cleaned address_s']:
-							flag.append(True)
-							continue
-				flag.append(False)
+			# # don't look at affil_city
+			# pattern = re.compile(r'{} \[(.*?)\]'.format(affil_name.lower()))
+			# flag = []
+			# for idx, element in enumerate(column_to_compare.apply(pattern.match)):
+			# 	if element is not None and 'cleaned address_s' in df_affli_found.columns:
+			# 		if isinstance(df_affli_found.iloc[idx]['cleaned address_s'], str):
+			# 			if element.group(1) not in df_affli_found.iloc[idx]['cleaned address_s']:
+			# 				flag.append(True)
+			# 				continue
+			# 	flag.append(False)
 			
-			df_exact = pd.concat([
-					df_exact,
-					df_affli_found.reset_index()[flag],	  
-				])
+			# df_exact = pd.concat([
+			# 		df_exact,
+			# 		df_affli_found.reset_index()[flag],	  
+			# 	])
 				
 			# Check for duplicated values in the specified column
 			# Keep only the rows where the 'label_s' column has unique values
@@ -1817,129 +1813,152 @@ class SearchAffilFromHal(AutomateHal):
 
 		# Check if a very short string yields too many results.
 		# If yes, it might be a parse error due to "departement of law, just, and human"...
-		if search_result[0] > 40 and len(affil_name.split())>=2:
-			self.log_filter_steps_for_affil_unit(pd.DataFrame(), aut, affil_name, 'Suspected parse error, return!')
+		if search_result[0] > 40 and len(affil_name.split())<=2:
+			self.log_filter_steps_for_affil_unit(pd.DataFrame(), aut, affil_name, 'Suspected parse error. Please check if your affilation name is parsed correclty!')
+			return self.return_callback_func()
+		
+		# If no match found: Return directly.
+		if search_result[0] == 0:
+			self.log_filter_steps_for_affil_unit(pd.DataFrame(), aut, affil_name, 'No match found!')
 			return self.return_callback_func()
 
-		if search_result[0] > 0:
-			# Create a dataframe to get all the found affliations.
-			for i in range(len(search_result[1])):
-				if i == 0:
-					df_affli_found = pd.DataFrame([search_result[1][i]])
-				else:
-					df_affli_found = pd.concat([df_affli_found, pd.DataFrame([search_result[1][i]])], ignore_index=True)
+		
+		# Create a dataframe to store all the found affliations.
+		# Apply preprocessing on the "label_s" column.
+		# Sort by the length of the affiliation name.
+		affil_name, df_affli_found = self.prepare_df_affil_found(search_result, affil_name)
+		self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'Original results after preprocessing')
 
-			# Preprocess df_affli_found['label_s'] and affil_name: Lower case and french words -> english words.
-			df_affli_found['label_s_ori'] = df_affli_found['label_s']
-			df_affli_found['label_s'] = df_affli_found['label_s'].apply(self.preprocess_affil_name)
-			affil_name = self.preprocess_affil_name(affil_name)
-			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'Original results after preprocessing')
+		# If used for invalid affiliations.
+		# Only check if it is an exact match.
+		if invalid_affil:
+			df_exact = df_affli_found[df_affli_found['label_s']==affil_name]
+			self.log_filter_steps_for_affil_unit(df_exact, aut, affil_name, 'Invalid affiliation id search')
 
-			# If used for invalid affiliations.
-			# Only check if it is an exact match.
-			if invalid_affil:
-				df_exact = df_affli_found[df_affli_found['label_s']==affil_name]
-				self.log_filter_steps_for_affil_unit(df_exact, aut, affil_name, 'Invalid affiliation id search')
-
-				if not df_exact.empty:
-					return self.return_callback_func(affi_exist_in_hal=True, best_affil_dict=df_exact.iloc[0].to_dict())
-				else:
-					return self.return_callback_func()
-
-			# If the current parent affil list is not empty: Filter based on parent affiliations.
-			df_affli_found = self.filter_by_parent_affil(df_affli_found, parent_affil_id)
-			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_parent_affil')
-													
-			# Sort by name lengh.
-			df_affli_found = self.sort_by_name_length(df=df_affli_found)
-
-			# Take maximal 30 records.
-			n_max = 30
-			if len(df_affli_found) > n_max:
-				if len(affil_name.split())>2:
-					df_affli_found = df_affli_found.iloc[:n_max, :]
-				else:
-					return self.return_callback_func()
-
-			# Check if the input affil name is an acronym.
-			# If yes, only consider the items that contain the [Acronym].
-			df_affli_found = self.filter_by_acronym_pattern(df_affli_found, affil_name)
-			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_acronym_pattern')
-
-			# Remove the child affiliations in the list.
-			df_affli_found = self.filter_by_university_group(df_affli_found)
-			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_university_group')
-
-			# If in the remaining affiliations, the author has published before: Select the first one.
-			affi_exist_in_hal, best_affil_dict = self.filter_by_prev_publications(df_affli_found, aut)
-			if affi_exist_in_hal:
-				self.log_filter_steps_for_affil_unit(best_affil_dict, aut, affil_name, 'filter_by_prev_publications')				
-				return self.return_callback_func(affi_exist_in_hal, best_affil_dict)
-			
-			# # Keep only the affiliations that starts with the required name:
-			# df_without_accent = df_affli_found['label_s'].apply(unidecode).str.lower()
-			# df_affli_found = df_affli_found[df_without_accent.str.startswith(
-			# 	unidecode(affil_name[0].lower()))]
-						
-			# Remove the rows when affil_country exists but do not match.
-			if affil_country:
-				df_affli_found = self.filter_by_country(df_affli_found, affil_country)
-				self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_country')					
-			
-			# Remove the rows when affil_city exists but do not match.
-			df_affli_found = self.filter_by_affil_city(df_affli_found, affil_city)
-			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_affil_city')
-						
-			# Find the different types of accepted matches.
-			df_exact = self.find_exact_match(df_affli_found, affil_name, affil_city)
-			self.log_filter_steps_for_affil_unit(df_exact, aut, affil_name, 'find_exact_match')
-
-			# Final evaluation.
-			# If there is an exact match, take it.			
 			if not df_exact.empty:
-				return self.return_callback_func(True, df_exact.iloc[0].to_dict())
-			
-			# If less than three affiliation remains, take the shortest one. Otherwise, return not found.
-			if len(df_affli_found) <= 3 and not df_affli_found.empty:
-				# Check the affiliation city is an exact match but not nan.
-				if affil_city:
-					df_affli_found = self.filter_by_affil_city(df_affli_found, affil_city, exact_filter=True)
-
-				# Check if the search string appears in a parent affiliatin name:
-				if len(affil_name.split(' ')) > 1 and not df_affli_found.empty:
-					affil_pattern = '.*?'.join(affil_name.split())
-					# Define the pattern with affil_name
-					pattern = fr'\[{affil_pattern}\]'
-					# Remove the rows when the affiliation name is contained in [].
-					mask = ~ df_affli_found['label_s'].str.contains(pattern, case=False)
-					df_affli_found = df_affli_found[mask]
-
-				if not df_affli_found.empty:
-					# Define the pattern with an optional comma before the first word
-					affil_pattern = '.*?'.join(affil_name.split())
-					pattern = fr',?\s*\[{affil_pattern}\]'
-					mask = ~ df_affli_found['label_s'].str.contains(pattern, case=False)
-					df_affli_found = df_affli_found[mask]
-
-				if not df_affli_found.empty:
-					affi_exist_in_hal = True
-					best_affil_dict = df_affli_found.iloc[0].to_dict()
-					
-					# We prefer the affiliation with parents identical to existing affiliations.
-					if 'parentName_s' in df_affli_found.columns:
-						for i in range(len(df_affli_found)):
-							if isinstance(df_affli_found.iloc[i]['parentName_s'], str) or isinstance(df_affli_found.iloc[i]['parentName_s'], list):
-								best_affil_dict = df_affli_found.iloc[i].to_dict()
-								break
-									
-					return self.return_callback_func(affi_exist_in_hal, best_affil_dict)
-				else:
-					return self.return_callback_func()
+				return self.return_callback_func(affi_exist_in_hal=True, best_affil_dict=df_exact.iloc[0].to_dict())
 			else:
-				self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'final evaluation. Why did not match.')
-				return self.return_callback_func()	
+				return self.return_callback_func()
+
+		# Apply exact search. If there is only one exact match found, return this one.
+		# If no exact match, or multiple exact match found, continue to filter the results.
+		df_exact = self.find_exact_match(df_affli_found, affil_name, affil_city)
+		self.log_filter_steps_for_affil_unit(df_exact, aut, affil_name, 'find_exact_match')
+		# If there is only one exact match, take it.			
+		if len(df_exact)==1:
+			return self.return_callback_func(True, df_exact.iloc[0].to_dict())
+		# If there are multiple exact matches (or zero), continue to filter.
+		if len(df_exact)>1:
+			df_affli_found = df_exact
+
+		# If the current parent affil list is not empty: Filter based on parent affiliations.
+		df_affli_found = self.filter_by_parent_affil(df_affli_found, parent_affil_id)
+		self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_parent_affil')											
+		
+		# Take maximal 30 records.
+		n_max = 30
+		if len(df_affli_found) > n_max:
+			if len(affil_name.split())>2:
+				df_affli_found = df_affli_found.iloc[:n_max, :]
+			else:
+				return self.return_callback_func()
+
+		# Check if the input affil name is an acronym.
+		# If yes, only consider the items that contain the [Acronym].
+		df_affli_found = self.filter_by_acronym_pattern(df_affli_found, affil_name)
+		self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_acronym_pattern')
+
+		# Remove the child affiliations in the list.
+		df_affli_found = self.filter_by_university_group(df_affli_found)
+		self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_university_group')
+
+		# If in the remaining affiliations, the author has published before: Select the first one.
+		affi_exist_in_hal, best_affil_dict = self.filter_by_prev_publications(df_affli_found, aut)
+		if affi_exist_in_hal:
+			self.log_filter_steps_for_affil_unit(best_affil_dict, aut, affil_name, 'filter_by_prev_publications')				
+			return self.return_callback_func(affi_exist_in_hal, best_affil_dict)
+		
+		# # Keep only the affiliations that starts with the required name:
+		# df_without_accent = df_affli_found['label_s'].apply(unidecode).str.lower()
+		# df_affli_found = df_affli_found[df_without_accent.str.startswith(
+		# 	unidecode(affil_name[0].lower()))]
+					
+		# Remove the rows when affil_country exists but do not match.
+		if affil_country:
+			df_affli_found = self.filter_by_country(df_affli_found, affil_country)
+			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_country')					
+		
+		# Remove the rows when affil_city exists but do not match.
+		df_affli_found = self.filter_by_affil_city(df_affli_found, affil_city)
+		self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_affil_city')
+
+		# Final evaluation:	
+		# If less than three affiliation remains, go for a final evalution. Otherwise, return not found.
+		if len(df_affli_found) <= 3 and not df_affli_found.empty:
+			# Check the affiliation city is an exact match but not nan.
+			if affil_city:
+				df_affli_found = self.filter_by_affil_city(df_affli_found, affil_city, exact_filter=True)
+
+			# Check if the search string appears in a parent affiliatin name:
+			# Example: Institute of XXX [Universite Paris Saclay]
+			if len(affil_name.split(' ')) > 1 and not df_affli_found.empty:
+				affil_pattern = '.*?'.join(affil_name.split())
+				# Define the pattern with affil_name
+				pattern = fr'\[{affil_pattern}\]'
+				# Remove the rows when the affiliation name is contained in [].
+				mask = ~ df_affli_found['label_s'].str.contains(pattern, case=False)
+				df_affli_found = df_affli_found[mask]
+
+			# Check if the search string appears in a parent affiliatin name by looking at if it is like "XXX, Universite Paris Saclay"
+			if not df_affli_found.empty:
+				# Define the pattern with an optional comma before the first word
+				affil_pattern = '.*?'.join(affil_name.split())
+				pattern = fr',?\s*\[{affil_pattern}\]'
+				mask = ~ df_affli_found['label_s'].str.contains(pattern, case=False)
+				df_affli_found = df_affli_found[mask]
+
+			if not df_affli_found.empty:
+				affi_exist_in_hal = True
+				best_affil_dict = df_affli_found.iloc[0].to_dict()
+				
+				# If there are still multiple choices, we prefer the affiliation with parents identical to existing affiliations.
+				if 'parentName_s' in df_affli_found.columns:
+					for i in range(len(df_affli_found)):
+						if isinstance(df_affli_found.iloc[i]['parentName_s'], str) or isinstance(df_affli_found.iloc[i]['parentName_s'], list):
+							best_affil_dict = df_affli_found.iloc[i].to_dict()
+							break
+								
+				return self.return_callback_func(affi_exist_in_hal, best_affil_dict)
+			else:
+				self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'Enter the final evaluation but No match found.')
+				return self.return_callback_func()
 		else:
-			return self.return_callback_func()
+			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'Exit before final choice: No match found.')
+			return self.return_callback_func()	
+
+
+	def prepare_df_affil_found(self, search_result, affil_name):
+		''' ### Desrption
+		Create a dataframe for the affiliation search results.
+		Apply self.preprocess_affil_name on the label_s column, as well as affil_name.		
+		'''
+		# Create the dataframe
+		for i in range(len(search_result[1])):
+			if i == 0:
+				df_affli_found = pd.DataFrame([search_result[1][i]])
+			else:
+				df_affli_found = pd.concat([df_affli_found, pd.DataFrame([search_result[1][i]])], ignore_index=True)
+
+		# Preprocess df_affli_found['label_s'] and affil_name: Lower case and french words -> english words.
+		df_affli_found['label_s_ori'] = df_affli_found['label_s']
+		df_affli_found['label_s'] = df_affli_found['label_s'].apply(self.preprocess_affil_name)
+		affil_name = self.preprocess_affil_name(affil_name)
+
+		# Sort by name lengh.
+		df_affli_found = self.sort_by_name_length(df=df_affli_found)
+		
+		return affil_name, df_affli_found
+
 		
 
 	def preprocess_affiliation_name(self, aut_affils, index, affil_country):
