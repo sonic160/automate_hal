@@ -1447,12 +1447,16 @@ class SearchAffilFromHal(AutomateHal):
 				condition_1 = df_affli_found['label_s'].str.lower().str.contains(pattern, regex=False)
 
 				# Condition 3: NaN in the address
-				condition_3 = pd.isna(df_affli_found['address_s'])	
+				condition_3 = pd.isna(df_affli_found['address_s'])
+
+				# Condition 4: XXX [system]
+				pattern = "[system]"				
+				condition_4 = df_affli_found['label_s'].str.lower().str.contains(pattern, regex=False)
 
 				if not exact_filter:
-					df_affli_found = df_affli_found[condition_1 | condition_2 | condition_3]
+					df_affli_found = df_affli_found[condition_1 | condition_2 | condition_3 | condition_4]
 				else:
-					df_affli_found = df_affli_found[condition_1 | condition_2]
+					df_affli_found = df_affli_found[condition_1 | condition_2 | condition_4]
 			else:
 				df_affli_found = pd.DataFrame()
 			
@@ -1466,9 +1470,16 @@ class SearchAffilFromHal(AutomateHal):
 		'''
 		if not df_affli_found.empty:
 			if len(affil_name.split(' ')) == 1:
+				# Check for pattern [XXX]
 				flag = df_affli_found['label_s'].str.contains('[{}]'.format(affil_name), regex=False)
-				if any(flag):
-					df_affli_found = df_affli_found[flag]
+				df_affli_found_1 = df_affli_found[flag]
+
+				# Check for exact match
+				df_affli_found_2 = df_affli_found[df_affli_found['label_s']==affil_name]
+
+				# Remove repetitive rows.
+				df_affli_found = pd.concat([df_affli_found_1, df_affli_found_2])
+				df_affli_found = df_affli_found[df_affli_found.duplicated(subset='label_s', keep=False)]
 
 		return df_affli_found
 
@@ -1594,25 +1605,44 @@ class SearchAffilFromHal(AutomateHal):
 
 		'''
 		if not df_affli_found.empty:
-			# If there is exact matched affil name:
+			# Define similar patterns.
 			column_to_compare = df_affli_found['label_s'].str.lower().replace('&', 'and')
+			column_to_compare = pd.Series([re.sub(r'\b(de |of )\b', '', item) for item in column_to_compare])
 			target_string = affil_name.lower().replace('&', 'and')
-
-			df_exact = df_affli_found[column_to_compare==target_string]
+			target_string = re.sub(r'\b(de |of )\b', '', target_string)
+			
+			# If there is exact matched affil name:
+			df_exact = df_affli_found.reset_index().loc[column_to_compare==target_string, :]
 			
 			# affil name [XXX]
-			pattern = re.compile(r'{} \[.*\]'.format(target_string.lower()))
-			df_exact = pd.concat([
-				df_exact,
-				df_affli_found[[element is not None for element in column_to_compare.apply(pattern.match)]]
-			])
+			# pattern = re.compile(r'{} \[.*\]'.format(target_string.lower()))
+			# df_exact = pd.concat([
+			# 	df_exact,
+			# 	df_affli_found[[element is not None for element in column_to_compare.apply(pattern.match)]]
+			# ])
 
 			# affil name [City name]
 			if pd.notna(affil_city):
 				df_exact = pd.concat([
 						df_exact,
-						df_affli_found[column_to_compare=='{} [{}]'.format(target_string.lower(), affil_city.lower())],	  
+						df_affli_found.reset_index()[column_to_compare=='{} [{}]'.format(target_string.lower(), affil_city.lower())],	  
 					])
+			
+			# don't look at affil_city
+			pattern = re.compile(r'{} \[(.*?)\]'.format(target_string.lower()))
+			flag = []
+			for idx, element in enumerate(column_to_compare.apply(pattern.match)):
+				if element is not None and 'cleaned address_s' in df_affli_found.columns:
+					if isinstance(df_affli_found.iloc[idx]['cleaned address_s'], str):
+						if element.group(1) not in df_affli_found.iloc[idx]['cleaned address_s']:
+							flag.append(True)
+							continue
+				flag.append(False)
+			
+			df_exact = pd.concat([
+					df_exact,
+					df_affli_found.reset_index()[flag],	  
+				])
 				
 			# Check for duplicated values in the specified column
 			duplicates_mask = df_exact['label_s'].duplicated(keep=False)
@@ -1744,6 +1774,12 @@ class SearchAffilFromHal(AutomateHal):
 			- best_match_affil_id (str): The dict of the best match affiliation.
 		'''
 
+		# Check if a very short string yields too many results.
+		# If yes, it might be a parse error due to "departement of law, just, and human"...
+		if search_result[0] > 40 and len(affil_name.split())>=2:
+			self.log_filter_steps_for_affil_unit(pd.DataFrame(), aut, affil_name, 'Suspected parse error, return!')
+			return self.return_callback_func()
+
 		if search_result[0] > 0:
 			# Create a dataframe to get all the found affliations.
 			for i in range(len(search_result[1])):
@@ -1779,8 +1815,10 @@ class SearchAffilFromHal(AutomateHal):
 			# Take maximal 30 records.
 			n_max = 30
 			if len(df_affli_found) > n_max:
-				df_affli_found = df_affli_found.iloc[:n_max, :]
-				# return return_callback_func()
+				if len(affil_name.split())>2:
+					df_affli_found = df_affli_found.iloc[:n_max, :]
+				else:
+					return self.return_callback_func()
 
 			# Check if the input affil name is an acronym.
 			# If yes, only consider the items that contain the [Acronym].
@@ -1825,11 +1863,36 @@ class SearchAffilFromHal(AutomateHal):
 				# Check the affiliation city is an exact match but not nan.
 				if affil_city:
 					df_affli_found = self.filter_by_affil_city(df_affli_found, affil_city, exact_filter=True)
-					if len(df_affli_found)>0:
-						affi_exist_in_hal = True
-						best_affil_dict = df_affli_found.iloc[0].to_dict()
-						return self.return_callback_func(affi_exist_in_hal, best_affil_dict)
-				if not affi_exist_in_hal:
+
+				# Check if the search string appears in a parent affiliatin name:
+				if len(affil_name.split(' ')) > 1 and not df_affli_found.empty:
+					affil_pattern = '.*?'.join(affil_name.split())
+					# Define the pattern with affil_name
+					pattern = fr'\[{affil_pattern}\]'
+					# Remove the rows when the affiliation name is contained in [].
+					mask = ~ df_affli_found['label_s'].str.contains(pattern, case=False)
+					df_affli_found = df_affli_found[mask]
+
+				if not df_affli_found.empty:
+					# Define the pattern with an optional comma before the first word
+					affil_pattern = '.*?'.join(affil_name.split())
+					pattern = fr',?\s*\[{affil_pattern}\]'
+					mask = ~ df_affli_found['label_s'].str.contains(pattern, case=False)
+					df_affli_found = df_affli_found[mask]
+
+				if not df_affli_found.empty:
+					affi_exist_in_hal = True
+					best_affil_dict = df_affli_found.iloc[0].to_dict()
+					
+					# We prefer the affiliation with parents identical to existing affiliations.
+					if 'parentName_s' in df_affli_found.columns:
+						for i in range(len(df_affli_found)):
+							if isinstance(df_affli_found.iloc[i]['parentName_s'], str) or isinstance(df_affli_found.iloc[i]['parentName_s'], list):
+								best_affil_dict = df_affli_found.iloc[i].to_dict()
+								break
+									
+					return self.return_callback_func(affi_exist_in_hal, best_affil_dict)
+				else:
 					return self.return_callback_func()
 			else:
 				self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'final evaluation. Why did not match.')
@@ -1857,7 +1920,8 @@ class SearchAffilFromHal(AutomateHal):
 				('electricite de france', 'edf'),
 				('mines paristech', 'mines paris - psl'),
 				('ecole ', ''),
-				('randd', 'r d')
+				('randd', 'r d'),
+				('centralesupelec universite', 'centralesupelec, universite')
 				# Add more replacement pairs as needed
 			]
 
@@ -1865,6 +1929,9 @@ class SearchAffilFromHal(AutomateHal):
 			output_string = unidecode(affil_name).lower()
 			for old_str, new_str in replacements:
 				output_string = output_string.replace(old_str, new_str)
+
+			# Remove "of" and "de":
+			output_string = re.sub(r'\b(de |of )\b', '', output_string)
 
 			aut_affils[index] = output_string
 
@@ -1888,7 +1955,24 @@ class SearchAffilFromHal(AutomateHal):
 
 			'''
 			aut_affil = aut_affils[index]
-			if affil_country == 'fr' or affil_country == '':
+
+			# If aut_affil contains acronym, extract the acronym.
+			# Define a regular expression pattern to match "(XXX)"
+			pattern = r'\((.*?)\)'
+			# Use re.search to find the pattern in the string
+			match = re.search(pattern, aut_affil)
+			# Check if the pattern is found
+			if match:
+				# Extract the content inside the parentheses
+				affi_acronym = match.group(1)
+				
+				# Add the acronym to the end of the string
+				if 'fondation' not in aut_affil: # Exception: If "fondation edf..."
+					# Remove acronym from the original string.
+					aut_affil = aut_affil.replace(' ({})'.format(affi_acronym), '')
+					aut_affil += ', ' + affi_acronym
+
+			if affil_country == 'fr' or affil_country == '' or affil_country == 'be':
 				if 'university' in aut_affil.lower():
 					index_university = aut_affil.lower().find('university')
 					idx_begin = aut_affil.lower().find(',', 0, index_university)
@@ -1896,22 +1980,9 @@ class SearchAffilFromHal(AutomateHal):
 					old_aut_affil = aut_affil.lower()[idx_begin+1:idx_end].strip() if idx_end != -1 else aut_affil.lower()[idx_begin+1:].strip()
 					new_aut_affil = old_aut_affil.replace('university', 'universite')
 					new_aut_affil = new_aut_affil.replace('of', '')
-					aut_affils[index] += ', ' + new_aut_affil
+					aut_affil += ', ' + new_aut_affil
 
-			# If aut_affil contains acronym, extract the acronym.
-			# Define a regular expression pattern to match "(XXX)"
-			pattern = r'\((\w+)\)'
-			# Use re.search to find the pattern in the string
-			match = re.search(pattern, aut_affil)
-			# Check if the pattern is found
-			if match:
-				# Extract the content inside the parentheses
-				affi_acronym = match.group(1)
-				# Remove acronym from the original string.
-				aut_affils[index] = aut_affils[index].replace(' ({})'.format(affi_acronym), '')
-				# Add the acronym to the end of the string
-				if 'fondation' not in aut_affils[index]: # Exception: If "fondation edf..."
-					aut_affils[index] += ', ' + affi_acronym
+			aut_affils[index] = aut_affil					
 
 			return aut_affils[index]
 		
@@ -2557,7 +2628,12 @@ class GenerateXMLTree(AutomateHal):
 		eAnalytic.remove(eTitle) 
 				
 		eTitle = ET.Element('title', {'xml:lang': self.doc_data_for_tei["language"] })
-		eTitle.text = self.doc_data_for_tei['title']
+
+		if not self.debug_hal_upload:
+			eTitle.text = self.doc_data_for_tei['title']
+		else:
+			eTitle.text = self.doc_data_for_tei['title'] + ' - test'
+		
 		eAnalytic.insert(0, eTitle)
 
 
@@ -2676,7 +2752,7 @@ if __name__ == '__main__':
 	# search_query = 'AU-ID(56609542700) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Yanfu Li
 	# search_query = 'AU-ID(14049106600) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Nicola Pedroni
 	# search_query = 'AU-ID(7102745133) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Anne Barros
-	search_query = 'EID (2-s2.0-85150020082)'
+	search_query = 'EID (2-s2.0-85107087996)'
 
 	results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
 	df_result = pd.DataFrame(results.results)
