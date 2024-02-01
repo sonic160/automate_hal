@@ -295,6 +295,47 @@ class AutomateHal:
 		xmlfh.close()
 
 
+	def preprocess_affil_name(self, affil_name):
+		''' ### Description
+		Preprocess the input affiliation name. Preprocessing includes:
+		- Remove accents and other special characters in french.
+		- Remove special characters like "#&-".
+		- Remove "of" and "the" in the affiliation name.
+		- Change into lower cases.
+		- Correct some common typos.
+		
+		### Parameters:
+		- affil_name (str): Affiliation name to preprocess.
+		
+		### Returns:
+		- affil_name (str): Preprocessed affiliation name.
+		'''
+		replacements = [
+				('electricite de france', 'edf'),
+				('mines paristech', 'mines paris - psl'),
+				('ecole ', ''),
+				('randd', 'r d'),
+				('centralesupelec universite', 'centralesupelec, universite'),
+				('centralesupelec/universite', 'centralesupelec, universite')
+				# Add more replacement pairs as needed
+			]
+
+		# Remove french special characters and change into lower cases.
+		output_string = unidecode(affil_name).lower()
+
+		# Replace common typos.
+		for old_str, new_str in replacements:
+			output_string = output_string.replace(old_str, new_str)
+
+		# Remove "of" and "de":
+		output_string = re.sub(r'\b(de |of )\b', '', output_string)
+		
+		# Use the re.sub function to remove "&" and "-" symbols
+		output_string = re.sub(r'\s*[&-]\s*', ' ', output_string)
+
+		return output_string
+
+
 	def process_hal_upload_response(self, response):
 		''' ### Description
 		Get from the response of hal upload the id and url of the uploaded files.
@@ -1790,8 +1831,8 @@ class SearchAffilFromHal(AutomateHal):
 
 			# Preprocess df_affli_found['label_s'] and affil_name: Lower case and french words -> english words.
 			df_affli_found['label_s_ori'] = df_affli_found['label_s']
-			df_affli_found['label_s'] = df_affli_found['label_s'].apply(unidecode).str.lower()
-			affil_name = unidecode(affil_name).lower()
+			df_affli_found['label_s'] = df_affli_found['label_s'].apply(self.preprocess_affil_name)
+			affil_name = self.preprocess_affil_name(affil_name)
 			self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'Original results after preprocessing')
 
 			# If used for invalid affiliations.
@@ -1915,24 +1956,7 @@ class SearchAffilFromHal(AutomateHal):
 		# Defuzzy affiliation names.
 		def defuzzy_affil_name(aut_affils, index):
 			affil_name = aut_affils[index]
-
-			replacements = [
-				('electricite de france', 'edf'),
-				('mines paristech', 'mines paris - psl'),
-				('ecole ', ''),
-				('randd', 'r d'),
-				('centralesupelec universite', 'centralesupelec, universite')
-				# Add more replacement pairs as needed
-			]
-
-			# Apply the replacements
-			output_string = unidecode(affil_name).lower()
-			for old_str, new_str in replacements:
-				output_string = output_string.replace(old_str, new_str)
-
-			# Remove "of" and "de":
-			output_string = re.sub(r'\b(de |of )\b', '', output_string)
-
+			output_string = self.preprocess_affil_name(affil_name)
 			aut_affils[index] = output_string
 
 			return output_string
@@ -1972,14 +1996,23 @@ class SearchAffilFromHal(AutomateHal):
 					aut_affil = aut_affil.replace(' ({})'.format(affi_acronym), '')
 					aut_affil += ', ' + affi_acronym
 
+			replacements = [
+				('university', 'universite'),
+				('technology', 'technologie'),
+				('technological', 'technologie')
+				# Add more replacement pairs as needed
+			]
 			if affil_country == 'fr' or affil_country == '' or affil_country == 'be':
 				if 'university' in aut_affil.lower():
 					index_university = aut_affil.lower().find('university')
 					idx_begin = aut_affil.lower().find(',', 0, index_university)
 					idx_end = aut_affil.lower().find(',', index_university)
-					old_aut_affil = aut_affil.lower()[idx_begin+1:idx_end].strip() if idx_end != -1 else aut_affil.lower()[idx_begin+1:].strip()
-					new_aut_affil = old_aut_affil.replace('university', 'universite')
-					new_aut_affil = new_aut_affil.replace('of', '')
+
+					# Replace the english words with french ones.
+					new_aut_affil = aut_affil.lower()[idx_begin+1:idx_end].strip() if idx_end != -1 else aut_affil.lower()[idx_begin+1:].strip()
+					for old_str, new_str in replacements:
+						new_aut_affil = new_aut_affil.replace(old_str, new_str)
+					
 					aut_affil += ', ' + new_aut_affil
 
 			aut_affils[index] = aut_affil					
