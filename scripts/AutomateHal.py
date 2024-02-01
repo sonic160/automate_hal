@@ -1479,7 +1479,7 @@ class SearchAffilFromHal(AutomateHal):
 
 				# Remove repetitive rows.
 				df_affli_found = pd.concat([df_affli_found_1, df_affli_found_2])
-				df_affli_found = df_affli_found[df_affli_found.duplicated(subset='label_s', keep=False)]
+				df_affli_found = df_affli_found.drop_duplicates(subset='label_s', keep='first')
 
 		return df_affli_found
 
@@ -1646,9 +1646,8 @@ class SearchAffilFromHal(AutomateHal):
 				])
 				
 			# Check for duplicated values in the specified column
-			duplicates_mask = df_exact['label_s'].duplicated(keep=False)
 			# Keep only the rows where the 'label_s' column has unique values
-			df_exact = df_exact[~duplicates_mask]
+			df_exact = df_exact.drop_duplicates(subset='label_s', keep='first')
 		else:
 			df_exact = df_affli_found
 			
@@ -2746,7 +2745,7 @@ class GenerateXMLTree(AutomateHal):
 if __name__ == '__main__':
 	# Define search query.
 	# search_query = 'AU-ID(55659850100) OR AU-ID(55348807500) OR AU-ID(7102745133) AND PUBYEAR > 2017 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)'
-	search_query = 'AU-ID(55348807500) AND PUBYEAR > 2016 AND PUBYEAR < 2025' # Zhiguo Zeng
+	# search_query = 'AU-ID(55348807500) AND PUBYEAR > 2016 AND PUBYEAR < 2025' # Zhiguo Zeng
 	# search_query = 'AU-ID(7005289082) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Enrico Zio
 	# search_query = 'AU-ID(7005289082) AND PUBYEAR > 2000  AND PUBYEAR < 2025' # Enrico Zio
 	# search_query = 'AU-ID(6602469780) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)' # Bernard Yannou
@@ -2754,6 +2753,7 @@ if __name__ == '__main__':
 	# search_query = 'AU-ID(14049106600) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Nicola Pedroni
 	# search_query = 'AU-ID(7102745133) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Anne Barros
 	# search_query = 'EID (2-s2.0-85107087996)'
+	search_query = 'AU-ID(7801563868) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Nabil Anwer
 
 	results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
 	df_result = pd.DataFrame(results.results)
@@ -2765,8 +2765,8 @@ if __name__ == '__main__':
 	# Define paths for the input data.
 	perso_data_path = './data/inputs/path_and_perso_data.json'
 	author_db_path = './data/inputs/auth_db.csv'
-	affil_db_path = './data/inputs/affiliation_db.csv'
-	# affil_db_path = ''
+	# affil_db_path = './data/inputs/affiliation_db.csv'
+	affil_db_path = ''
 
 	# Define the stamps you want to add to the paper.
 	# If you don't want to add stamp: stamps = []
@@ -2779,9 +2779,9 @@ if __name__ == '__main__':
 
 	# For debugging: Only upload the first rowRange records.
 	# Comment this line if you want to upload all the records.
-	row_range=[0, 100]
+	row_range=[0, 140]
 
-	auto_hal.debug_affiliation_search = False
+	auto_hal.debug_affiliation_search = True
 	auto_hal.debug_hal_upload = True
 	auto_hal.allow_create_new_affiliation = False
 

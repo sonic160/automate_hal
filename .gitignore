@@ -4,5 +4,5 @@ data/inputs/path_and_perso_data.json
 data/outputs/TEI/
 # data/outputs/log.csv
 data/archived
-my_ws/
+scripts/debug_AutomateHal.py
 data/outputs
