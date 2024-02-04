@@ -333,6 +333,13 @@ class AutomateHal:
 		# Use the re.sub function to remove "&" and "-" symbols
 		output_string = re.sub(r'\s*[&-]\s*', ' ', output_string)
 
+		# Remove the extra space between the words.
+		words = output_string.split()
+
+		# Join the words back together with a single space between them
+		output_string = ' '.join(words)
+
+
 		return output_string
 
 
@@ -1652,12 +1659,12 @@ class SearchAffilFromHal(AutomateHal):
 			# If there is exact matched affil name:
 			df_exact = df_affli_found.loc[column_to_compare==affil_name, :]
 			
-			# affil name [XXX]
-			pattern = re.compile(r'{} \[.*\]'.format(affil_name))
-			df_exact = pd.concat([
-				df_exact,
-				df_affli_found[[element is not None for element in column_to_compare.apply(pattern.match)]]
-			])
+			# # affil name [XXX]
+			# pattern = re.compile(r'{} \[.*\]'.format(affil_name))
+			# df_exact = pd.concat([
+			# 	df_exact,
+			# 	df_affli_found[[element is not None for element in column_to_compare.apply(pattern.match)]]
+			# ])
 
 			# affil name [City name]
 			if pd.notna(affil_city):
@@ -1665,22 +1672,22 @@ class SearchAffilFromHal(AutomateHal):
 						df_exact,
 						df_affli_found.reset_index()[column_to_compare=='{} [{}]'.format(affil_name.lower(), affil_city.lower())],	  
 					])
+
+			# if there is no affilation city, find all the matches in format of XXX [XXX], except for XXX [Location]
+			pattern = re.compile(r'{} \[(.*?)\]'.format(affil_name.lower()))
+			flag = []
+			for idx, element in enumerate(column_to_compare.apply(pattern.match)):
+				if element is not None and 'cleaned address_s' in df_affli_found.columns:
+					if isinstance(df_affli_found.iloc[idx]['cleaned address_s'], str):
+						if element.group(1) not in df_affli_found.iloc[idx]['cleaned address_s']:
+							flag.append(True)
+							continue
+				flag.append(False)
 			
-			# # don't look at affil_city
-			# pattern = re.compile(r'{} \[(.*?)\]'.format(affil_name.lower()))
-			# flag = []
-			# for idx, element in enumerate(column_to_compare.apply(pattern.match)):
-			# 	if element is not None and 'cleaned address_s' in df_affli_found.columns:
-			# 		if isinstance(df_affli_found.iloc[idx]['cleaned address_s'], str):
-			# 			if element.group(1) not in df_affli_found.iloc[idx]['cleaned address_s']:
-			# 				flag.append(True)
-			# 				continue
-			# 	flag.append(False)
-			
-			# df_exact = pd.concat([
-			# 		df_exact,
-			# 		df_affli_found.reset_index()[flag],	  
-			# 	])
+			df_exact = pd.concat([
+					df_exact,
+					df_affli_found.reset_index()[flag],	  
+				])
 				
 			# Check for duplicated values in the specified column
 			# Keep only the rows where the 'label_s' column has unique values
@@ -1910,7 +1917,7 @@ class SearchAffilFromHal(AutomateHal):
 				df_affli_found = df_affli_found[mask]
 
 			# Check if the search string appears in a parent affiliatin name by looking at if it is like "XXX, Universite Paris Saclay"
-			if not df_affli_found.empty:
+			if len(affil_name.split(' ')) > 1 and not df_affli_found.empty:
 				# Define the pattern with an optional comma before the first word
 				affil_pattern = '.*?'.join(affil_name.split())
 				pattern = fr',?\s*\[{affil_pattern}\]'
@@ -2258,7 +2265,10 @@ class GenerateXMLTree(AutomateHal):
 			ValueError('Mode value error!')
 
 		doc_data_for_tei['doctype'] = self.doc_data['doctype']
-		doc_data_for_tei['abstract'] = False if abstract.startswith('[No abstr') else abstract[: abstract.find('©') - 1]
+		if isinstance(abstract, str):
+			doc_data_for_tei['abstract'] = False if abstract.startswith('[No abstr') else abstract[: abstract.find('©') - 1]
+		else:
+			doc_data_for_tei['abstract'] = False
 
 		# Match language
 		if isinstance(self.doc_data['language'], str):
