@@ -1473,21 +1473,9 @@ class SearchAffilFromHal(AutomateHal):
 			- df_affli_found (pd.DataFrame): The DataFrame of possible affiliations.
 		'''
 
-		# Custom function to clean and format the address
-		def clean_and_format_address(address):
-			output = ''
-			if pd.notna(address):
-				address = unidecode(address)								
-				cleaned_address = re.sub(r'[^a-zA-Z0-9 ]', ' ', address)  # Keep only letters and numbers
-				output = cleaned_address.lower()
-		
-			return output
-
-		if not df_affli_found.empty:
-			affil_city = clean_and_format_address(affil_city)
+		if not df_affli_found.empty:			
 			if 'address_s' in df_affli_found.columns:
-				# Conditino 2: Address contains the city
-				df_affli_found['cleaned address_s'] = df_affli_found['address_s'].apply(clean_and_format_address)
+				# Conditino 2: Address contains the city				
 				condition_2 = df_affli_found['cleaned address_s'].str.contains(affil_city, regex=False)				
 			
 				# Condition 1: XXX [Location] in affilication name
@@ -1655,9 +1643,18 @@ class SearchAffilFromHal(AutomateHal):
 		if not df_affli_found.empty:
 			# Define similar patterns.
 			column_to_compare = df_affli_found['label_s']			
+						
+			if 'parentDocid_i' in df_affli_found.columns:
+				# Keep the rows that do not have parent affil ids.
+				tmp_df_1 = df_affli_found[pd.isna(df_affli_found['parentDocid_i'])]
+			else:
+				tmp_df_1 = df_affli_found
+			
+			df_exact = tmp_df_1.loc[tmp_df_1['label_s']==affil_name, :]
 			
 			# If there is exact matched affil name:
-			df_exact = df_affli_found.loc[column_to_compare==affil_name, :]
+			if len(df_affli_found)<=5: # Get rid of commonly encountered name like "department of mechanical engineering".
+				df_exact = pd.concat([df_exact, df_affli_found.loc[column_to_compare==affil_name, :]])			
 			
 			# # affil name [XXX]
 			# pattern = re.compile(r'{} \[.*\]'.format(affil_name))
@@ -1670,11 +1667,12 @@ class SearchAffilFromHal(AutomateHal):
 			if pd.notna(affil_city):
 				df_exact = pd.concat([
 						df_exact,
-						df_affli_found.reset_index()[column_to_compare=='{} [{}]'.format(affil_name.lower(), affil_city.lower())],	  
+						df_affli_found[column_to_compare=='{} [{}]'.format(affil_name.lower(), affil_city.lower())]
 					])
 
 			# if there is no affilation city, find all the matches in format of XXX [XXX], except for XXX [Location]
-			pattern = re.compile(r'{} \[(.*?)\]'.format(affil_name.lower()))
+			# pattern = re.compile(r'{} \[(.*?)\]'.format(affil_name.lower()))
+			pattern = re.compile(r'{} \[([{}].*?)\]'.format(affil_name.lower(), affil_name[0].lower()))
 			flag = []
 			for idx, element in enumerate(column_to_compare.apply(pattern.match)):
 				if element is not None and 'cleaned address_s' in df_affli_found.columns:
@@ -1687,6 +1685,11 @@ class SearchAffilFromHal(AutomateHal):
 			df_exact = pd.concat([
 					df_exact,
 					df_affli_found.reset_index()[flag],	  
+				])
+			
+			# Allow XXX [system]
+			df_exact = pd.concat([df_exact,
+					df_affli_found[column_to_compare=='{} [system]'.format(affil_name.lower())]
 				])
 				
 			# Check for duplicated values in the specified column
@@ -1833,7 +1836,7 @@ class SearchAffilFromHal(AutomateHal):
 		# Create a dataframe to store all the found affliations.
 		# Apply preprocessing on the "label_s" column.
 		# Sort by the length of the affiliation name.
-		affil_name, df_affli_found = self.prepare_df_affil_found(search_result, affil_name)
+		affil_name, affil_city, df_affli_found = self.prepare_df_affil_found(search_result, affil_name, affil_city)
 		self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'Original results after preprocessing')
 
 		# If used for invalid affiliations.
@@ -1846,7 +1849,27 @@ class SearchAffilFromHal(AutomateHal):
 				return self.return_callback_func(affi_exist_in_hal=True, best_affil_dict=df_exact.iloc[0].to_dict())
 			else:
 				return self.return_callback_func()
+			
+		# If the current parent affil list is not empty: Filter based on parent affiliations.
+		df_affli_found = self.filter_by_parent_affil(df_affli_found, parent_affil_id)
+		self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_parent_affil')	
 
+		# If only one match found:
+		if len(df_affli_found)==1:
+			# Check if it is an acronym and follows the acronym pattern [Acronym].
+			df_affli_found = self.filter_by_acronym_pattern(df_affli_found, affil_name)
+
+			# Remove the rows when affil_country exists but do not match.
+			if affil_country:
+				df_affli_found = self.filter_by_country(df_affli_found, affil_country)
+			
+			if len(df_affli_found)==0:
+				self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'Only one match found in the search result. But not recognized.')
+				return self.return_callback_func()
+			else:
+				self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'Only one match found in the search result. Confirm and returned.')
+				return self.return_callback_func(True, df_affli_found.iloc[0].to_dict())
+			
 		# Apply exact search. If there is only one exact match found, return this one.
 		# If no exact match, or multiple exact match found, continue to filter the results.
 		df_exact = self.find_exact_match(df_affli_found, affil_name, affil_city)
@@ -1856,11 +1879,7 @@ class SearchAffilFromHal(AutomateHal):
 			return self.return_callback_func(True, df_exact.iloc[0].to_dict())
 		# If there are multiple exact matches (or zero), continue to filter.
 		if len(df_exact)>1:
-			df_affli_found = df_exact
-
-		# If the current parent affil list is not empty: Filter based on parent affiliations.
-		df_affli_found = self.filter_by_parent_affil(df_affli_found, parent_affil_id)
-		self.log_filter_steps_for_affil_unit(df_affli_found, aut, affil_name, 'filter_by_parent_affil')											
+			df_affli_found = df_exact									
 		
 		# Take maximal 30 records.
 		n_max = 30
@@ -1944,11 +1963,23 @@ class SearchAffilFromHal(AutomateHal):
 			return self.return_callback_func()	
 
 
-	def prepare_df_affil_found(self, search_result, affil_name):
+	def prepare_df_affil_found(self, search_result, affil_name, affil_city):
 		''' ### Desrption
 		Create a dataframe for the affiliation search results.
 		Apply self.preprocess_affil_name on the label_s column, as well as affil_name.		
 		'''
+
+		# Custom function to clean and format the address
+		def clean_and_format_address(address):
+			output = ''
+			if pd.notna(address):
+				address = unidecode(address)								
+				cleaned_address = re.sub(r'[^a-zA-Z0-9 ]', ' ', address)  # Keep only letters and numbers
+				output = cleaned_address.lower()
+		
+			return output
+		
+
 		# Create the dataframe
 		for i in range(len(search_result[1])):
 			if i == 0:
@@ -1964,7 +1995,15 @@ class SearchAffilFromHal(AutomateHal):
 		# Sort by name lengh.
 		df_affli_found = self.sort_by_name_length(df=df_affli_found)
 		
-		return affil_name, df_affli_found
+		# Clean the address
+		if 'address_s' in df_affli_found.columns:
+			df_affli_found['cleaned address_s'] = df_affli_found['address_s'].apply(clean_and_format_address)
+		else:
+			df_affli_found['cleaned address_s'] = ''
+			
+		affil_city = clean_and_format_address(affil_city)
+		
+		return affil_name, affil_city, df_affli_found
 
 		
 
