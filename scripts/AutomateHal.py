@@ -1572,12 +1572,12 @@ class SearchAffilFromHal(AutomateHal):
 			for i in range(len(df_affli_found)):
 				search_query = 'structId_i:{}&fq=auth_t:"{} {}"'.format(df_affli_found.iloc[i]['docid'], aut['forename'], aut['surname'])
 				num, _ = self.reqHal(search_query=search_query)
-				flag.append(num>0)
-			if any(flag):
-				df_affli_found = df_affli_found[flag]
+				flag.append(num)
+			if max(flag)>0:
+				max_index = flag.index(max(flag))
 				
 				affi_exist_in_hal = True
-				best_affil_dict = df_affli_found.iloc[0].to_dict()
+				best_affil_dict = df_affli_found.iloc[max_index].to_dict()
 
 		return affi_exist_in_hal, best_affil_dict
 	
@@ -1763,7 +1763,8 @@ class SearchAffilFromHal(AutomateHal):
 	def sort_by_name_length(self, df):																			
 		# Function to calculate the number of words in a string
 		def count_words(text):
-			return len(text.split())
+			cleaned_text = re.sub(r'\[.*?\]', '', text)
+			return len(cleaned_text.split())
 
 		if df.empty:
 			return df
