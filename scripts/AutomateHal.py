@@ -618,8 +618,43 @@ class AutomateHal:
 		''' ### Description
 		For the csv search result, this function will add columns to map the keys into the formats of the "search_query" mode.		
 		'''
+
+		def transform_page_range(df_result):
+			''' ### Description
+			For the csv search result, this function will transform the page range into a string.
+			'''
+			df_result['pageRange'] = ''
+			for i, row in df_result.iterrows():
+				if pd.notna(row['Page start']) and pd.notna(row['Page end']):
+					df_result.loc[i, 'pageRange'] = str(int(row['Page start'])) + "-" + str(int(row['Page end']))
+
+
+		def transform_authkeywords(df_result):
+			''' ### Description
+			For the csv search result, this function will transform the authkeywords into a string.
+			'''
+			df_result['authkeywords'] = ''
+			for i, row in df_result.iterrows():
+				if isinstance(row['Author Keywords'], str):
+					df_result.loc[i, 'authkeywords'] = row['Author Keywords'].replace(';', ' |')
+
 		if self.mode == 'csv':
 			df_result['eid'] = df_result['EID']
+			df_result['doi'] = df_result['DOI']
+			df_result['title'] = df_result['Title']
+			df_result['aggregationType'] = df_result['Document Type']
+			df_result["publicationName"] = df_result["Source title"]
+			df_result['issueIdentifier'] = df_result['Issue']
+			df_result['volume'] = df_result['Volume']
+			df_result['coverDate'] = df_result['Year']
+			df_result['description'] = df_result['Abstract']
+			df_result['fund_no'] = ''
+			df_result['fund_acr'] = df_result['Funding Details']
+			df_result['issn'] = df_result['ISSN']
+			df_result['author_names'] = df_result['Author full names'].apply(lambda x: re.sub(r'\s*\(\d+\)', '', x))
+			df_result['author_names'] = df_result['author_names'].apply(lambda x: x.replace('; ', ';'))
+			transform_page_range(df_result)
+			transform_authkeywords(df_result)
 
 	
 	def process_papers(self, df_result, row_range=[0, 200]):
@@ -1000,21 +1035,12 @@ class TreatPaperInformation(AutomateHal):
 		'''
 		# Get the ids of each paper.
 		field_names = ['eid', 'doi', 'doctype', 'title']
-		if self.mode == 'search_query':
-			doc_type_supported, doc_type = self.is_doctype_supported(doc['aggregationType'])
-			if not doc_type_supported:
-				raise ValueError('Document type not supported! doc_type={}'.format(doc_type))
-			values = [doc['eid'], doc['doi'], doc_type, doc['title']]
-			self.update_doc_data(field_names=field_names, values=values)			
-		elif self.mode =='csv':
-			doc_type_supported, doc_type = self.is_doctype_supported(doc['Document Type'])
-			if not doc_type_supported:
-				raise('Document type not supported! doc_type={}'.format(doc_type))
-			values = [doc['EID'], doc['DOI'], doc_type, doc['Title']]
-			self.update_doc_data(field_names=field_names, values=values)
-		else: 
-			raise ValueError('Please choose teh correct mode! Has to be "search_query" or "csv".')
-
+		doc_type_supported, doc_type = self.is_doctype_supported(doc['aggregationType'])
+		if not doc_type_supported:
+			raise ValueError('Document type not supported! doc_type={}'.format(doc_type))
+		values = [doc['eid'], doc['doi'], doc_type, doc['title']]
+		self.update_doc_data(field_names=field_names, values=values)
+		
 
 	def is_doctype_supported(self, doctype):
 		"""
@@ -1067,12 +1093,7 @@ class TreatPaperInformation(AutomateHal):
 
 			return True
 		else: # Then, check with title
-			if self.mode == 'search_query':
-				titleInHal = self.reqWithTitle(doc['title'])
-			elif self.mode == 'csv':
-				titleInHal = self.reqWithTitle(doc['Title'])
-			else:
-				ValueError("'mode' must be either 'search_query' or 'csv'!")
+			titleInHal = self.reqWithTitle(doc['title'])
 			if titleInHal[0] > 0:
 				print(f"already in HAL")
 				self.report_entry['hal_url'] = titleInHal[1][0]['uri_s']
@@ -2284,37 +2305,19 @@ class GenerateXMLTree(AutomateHal):
 		# Prepare input data for the TEI-xml tree.
 
 		doc_data_for_tei = self.doc_data_for_tei
-		
-		if self.mode == 'search_query':			
-			doc_data_for_tei['title'] = doc['title']
-			doc_data_for_tei['pub_name'] = doc["publicationName"]
-			doc_data_for_tei['issue'] = doc['issueIdentifier'] 
-			doc_data_for_tei['volume'] = doc['volume']
-			doc_data_for_tei['page_range'] = doc['pageRange']
-			doc_data_for_tei['cover_date'] = doc['coverDate']
-			if isinstance(doc['authkeywords'], str):
-				doc_data_for_tei['kw_list'] = doc['authkeywords'].split(" | ")
-			else:
-				doc_data_for_tei['kw_list'] = ''
-			abstract = doc['description']
-		elif self.mode =='csv':
-			doc_data_for_tei['title'] = doc['Title']
-			doc_data_for_tei['pub_name'] = doc["Source title"]
-			doc_data_for_tei['issue'] = doc['Issue'] 
-			doc_data_for_tei['volume'] = doc['Volume']
-			if doc['Page start'] and doc['Page end'] :
-				doc_data_for_tei['page_range'] = doc['Page start']+ "-"+doc['Page end']
-			else : 
-				doc_data_for_tei['page_range'] = ""
-			doc_data_for_tei['cover_date'] = doc['Year']
-			if isinstance(doc['authkeywords'], str):
-				doc_data_for_tei['kw_list'] = doc['Author Keywords'].split(" ; ")
-			else:
-				doc_data_for_tei['kw_list'] = ''
-			abstract = doc['Abstract']
-		else: 
-			ValueError('Mode value error!')
 
+		doc_data_for_tei['title'] = doc['title']
+		doc_data_for_tei['pub_name'] = doc["publicationName"]
+		doc_data_for_tei['issue'] = doc['issueIdentifier'] 
+		doc_data_for_tei['volume'] = doc['volume']
+		doc_data_for_tei['page_range'] = doc['pageRange']
+		doc_data_for_tei['cover_date'] = doc['coverDate']
+		if isinstance(doc['authkeywords'], str):
+			doc_data_for_tei['kw_list'] = doc['authkeywords'].split(" | ")
+		else:
+			doc_data_for_tei['kw_list'] = ''
+		abstract = doc['description']
+		
 		doc_data_for_tei['doctype'] = self.doc_data['doctype']
 		if isinstance(abstract, str):
 			doc_data_for_tei['abstract'] = False if abstract.startswith('[No abstr') else abstract[: abstract.find('©') - 1]
@@ -2351,18 +2354,12 @@ class GenerateXMLTree(AutomateHal):
 
 		# Extract funding data
 		doc_data_for_tei['funders'] = []
-		if self.mode == 'search_query':
-			if doc['fund_acr']:
-				if not doc['fund_no']:
-					doc_data_for_tei['funders'].append(doc['fund_acr'])
-				else:
-					doc_data_for_tei['funders'].append('Funder: {}, Grant NO: {}'.format(doc['fund_acr'], doc['fund_no']))
-		elif self.mode =='csv':
-			if doc['Funding Details']:
-				doc_data_for_tei['funders'].append(doc['Funding Details'])
-		else: 
-			ValueError('Mode value error!')
-
+		if doc['fund_acr'] and isinstance(doc['fund_acr'], str):
+			if not doc['fund_no']:
+				doc_data_for_tei['funders'].append(doc['fund_acr'])
+			else:
+				doc_data_for_tei['funders'].append('Funder: {}, Grant NO: {}'.format(doc['fund_acr'], doc['fund_no']))
+		
 		if self.doc_data['funding_text'] and isinstance(self.doc_data['funding_text'], str):
 			doc_data_for_tei['funders'].append(self.doc_data['funding_text'])
 
@@ -2409,12 +2406,7 @@ class GenerateXMLTree(AutomateHal):
 
 		# Get HAL journalId and ISSN
 		doc_data_for_tei['journalId'], doc_data_for_tei['issn'] = False, False
-		if self.mode == 'search_query':
-			doc_issn = doc['issn']
-		elif self.mode =='csv':
-			doc_issn = doc['ISSN']
-		else: ValueError('Mode value error!')
-		
+		doc_issn = doc['issn']
 		if doc_issn and isinstance(doc_issn, str):
 			# Format ISSN
 			zeroMissed = 8 - len(doc_issn)
