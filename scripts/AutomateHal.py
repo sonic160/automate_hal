@@ -613,6 +613,14 @@ class AutomateHal:
 		for idx, additional_log in enumerate(additional_logs):
 			save_as_json_file(additional_log, names_for_additional_logs[idx])
 
+
+	def treat_csv_search_result(self, df_result):
+		''' ### Description
+		For the csv search result, this function will add columns to map the keys into the formats of the "search_query" mode.		
+		'''
+		if self.mode == 'csv':
+			df_result['eid'] = df_result['EID']
+
 	
 	def process_papers(self, df_result, row_range=[0, 200]):
 		''' ### Description
@@ -623,6 +631,9 @@ class AutomateHal:
 		- `df_result` (DataFrame): DataFrame containing the search results from Scopus.		
 		- `row_range` (list): List of the range of rows to be processed. Default: [0, 200].
 		'''
+
+		if self.mode == 'csv':
+			self.treat_csv_search_result(df_result)
 
 		# Address the record in the scopus dataset one by one.
 		n = len(df_result)
