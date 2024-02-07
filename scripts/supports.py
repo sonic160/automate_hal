@@ -4,6 +4,9 @@ import xml.etree.ElementTree as ET
 import numpy as np
 from pybliometrics.scopus import ScopusSearch
 import pandas as pd
+from unidecode  import unidecode 
+import pycountry as pycountry
+import copy
 
 
 class automate_hal:
@@ -103,6 +106,8 @@ class automate_hal:
 			'endingPage': '',
 			'publisher': ''
 		} # A dictionary to store additional information about the document.
+		self.debug_mode = False # Whether to run in debug mode. If True, not verifying if existed in HAL.
+		self.upload_to_hal = True # Whether to upload the document reference to the HAL repository.
 
 		# Check mode:
 		if mode != 'search_query' and mode != 'csv':
@@ -375,8 +380,8 @@ class automate_hal:
 		if not self.matchDocType(doc_type):
 			return
 		# Verify if the paper is already in HAL.
-		elif self.verify_if_existed_in_hal(doc):
-			return
+		elif not self.debug_mode and self.verify_if_existed_in_hal(doc):
+				return			
 		else:        
 			# Extract & enrich authors data
 			ab = self.extractAuthors()
@@ -418,7 +423,8 @@ class automate_hal:
 			xml_path = self.exportTei(docTei)
 
 			# Upload to HAL.
-			self.hal_upload(xml_path)
+			if self.upload_to_hal:
+				self.hal_upload(xml_path)
 
 
 	def reqWithIds(self, doi):
@@ -551,13 +557,14 @@ class automate_hal:
 		return [num, docs]
 
 
-	def reqHalRef(self, ref_name, value=""):
+	def reqHalRef(self, ref_name, value="", return_field="&fl=docid,label_s&wt=json"):
 		"""
 		Performs a request to the HAL API to get references to some fields.
 
 		Parameters:
 		- ref_name (str): Reference field that you want information (e.g., 'structure', 'author').
 		- value (str): Value to search for (default: "").
+		- return_field (str): Field to return (default: "&fl=docid,label_s&wt=json").
 
 		Returns:
 		list: List containing the number of items found and a list of HAL documents.
@@ -565,7 +572,11 @@ class automate_hal:
 		"""
 
 		prefix = 'https://api.archives-ouvertes.fr/ref/'
-		suffix = "&fl=docid,label_s&wt=json"
+		suffix = return_field
+		# Encode the value to deal with special symbols like &
+		value = re.sub(r'&amp;', '& ', value)
+		value = re.sub(r'&', ' ', value)
+		# value = quote(value, safe='')
 		req = prefix + ref_name + '/?q=' + value + suffix
 		found = False
 
@@ -712,14 +723,17 @@ class automate_hal:
 
 		# Extract ISBN
 		if self.info_complement['isbn']:
-			if ';' in self.info_complement['isbn']:
+			dataTei['isbn'] = ''
+
+			if isinstance(self.info_complement['isbn'], list) or isinstance(self.info_complement['isbn'], tuple):
+				dataTei["isbn"] = self.info_complement['isbn'][0]
+				
+			if isinstance(self.info_complement['isbn'], str):
+				dataTei["isbn"] = self.info_complement['isbn']
+
+			if ';' in dataTei["isbn"]:
 				# If multiple ISBNs, take the first one only
-				dataTei["isbn"] = self.info_complement['isbn'][:self.info_complement['isbn'].index(';')]
-			else:
-				if len(self.info_complement['isbn'])>1:
-					dataTei["isbn"] = self.info_complement['isbn'][0]
-				else:
-					dataTei["isbn"] = self.info_complement['isbn']
+				dataTei["isbn"] = dataTei["isbn"][:dataTei["isbn"].index(';')]		
 		else:
 			dataTei['isbn'] = ''
 
@@ -751,280 +765,806 @@ class automate_hal:
 		ET.register_namespace('',"http://www.tei-c.org/ns/1.0")
 		ns = {'tei':'http://www.tei-c.org/ns/1.0'}
 		biblFullPath = 'tei:text/tei:body/tei:listBibl/tei:biblFull'
-
-		#___CHANGE titlesStmt : suppr and add funder	
-		#clear titlesStmt elements ( boz redundant info)
-		eTitleStmt = root.find(biblFullPath+'/tei:titleStmt', ns)
-		eTitleStmt.clear()
-
-		# if applicable add funders	
-		if len(dataTei['funders']) > 0 : 
-			for fund in dataTei['funders']: 
-				eFunder = ET.SubElement(eTitleStmt, 'funder')
-				eFunder.text = fund.replace('\n', ' ').replace('\r', ' ')
-
-		#___CHANGE editionStmt : suppr
-		eBiblFull = root.find(biblFullPath, ns)
-		eEdition = root.find(biblFullPath+'/tei:editionStmt', ns)
-		eBiblFull.remove(eEdition)
-		#___CHANGE seriesStmt
-		eSeriesStmt = root.find(biblFullPath+'/tei:seriesStmt', ns)
-		eSeriesStmt.clear()
-		eSeriesIdno_dict = {}
-		for i in range(0, len(stamps)):
-			eSeriesIdno_i = ET.SubElement(eSeriesStmt, 'idno')
-			eSeriesIdno_i.set('type','stamp')
-			eSeriesIdno_i.set('n', stamps[i])
-			eSeriesIdno_dict[stamps[i]] = eSeriesIdno_i
-
-		#___CHANGE  sourceDesc / title
-		eAnalytic = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic', ns)
-		eTitle = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic/tei:title', ns)
-		eAnalytic.remove(eTitle) 
-				
-		eTitle = ET.Element('title', {'xml:lang': dataTei["language"] })
-		eTitle.text = title
-		eAnalytic.insert(0, eTitle)
-
-		#___CHANGE  sourceDesc / biblStruct / analytics / authors
 		biblStructPath = biblFullPath+'/tei:sourceDesc/tei:biblStruct'
-		author = root.find(biblStructPath+'/tei:analytic/tei:author', ns)
-		eAnalytic.remove(author)
 
-		# Locate the back section of the xml file.
-		eListOrg = root.find('tei:text/tei:back/tei:listOrg', ns)
-		eOrg = root.find('tei:text/tei:back/tei:listOrg/tei:org', ns)
-		eListOrg.remove(eOrg)
 
-		# Reset new affiliation index and list.
-		new_affiliation_idx = 0
-		new_affliation = []
+		# Define private sub-function to parse differet part of the xml tree.
+		def parse_funder():
+			''' Parse funder element. 
+			'''
+			#___CHANGE titlesStmt : suppr and add funder	
+			#clear titlesStmt elements ( boz redundant info)
+			eTitleStmt = root.find(biblFullPath+'/tei:titleStmt', ns)
+			eTitleStmt.clear()
 
-		# For each author, write author information to the xml tree.
-		for aut in auths : 
-			role  = 'aut' if not aut['corresp'] else 'crp' #correspond ou non
-			eAuth = ET.SubElement(eAnalytic, 'author', {'role':role}) 
-			ePers = ET.SubElement(eAuth, 'persName')
+			# if applicable add funders	
+			if len(dataTei['funders']) > 0 : 
+				for fund in dataTei['funders']: 
+					eFunder = ET.SubElement(eTitleStmt, 'funder')
+					eFunder.text = fund.replace('\n', ' ').replace('\r', ' ')
 
-			eForename = ET.SubElement(ePers, 'forename', {'type':"first"})
-			if not aut['forename'] : eForename.text = aut['initial']
-			else : eForename.text = aut['forename']
 
-			eSurname = ET.SubElement(ePers, 'surname')
-			eSurname.text = aut['surname']	
+		def parse_stamp():
+			''' Parse stamp element.
+			'''
+			#___CHANGE editionStmt : suppr
+			eBiblFull = root.find(biblFullPath, ns)
+			eEdition = root.find(biblFullPath+'/tei:editionStmt', ns)
+			eBiblFull.remove(eEdition)
+			#___CHANGE seriesStmt
+			eSeriesStmt = root.find(biblFullPath+'/tei:seriesStmt', ns)
+			eSeriesStmt.clear()
+			eSeriesIdno_dict = {}
+			for i in range(0, len(stamps)):
+				eSeriesIdno_i = ET.SubElement(eSeriesStmt, 'idno')
+				eSeriesIdno_i.set('type','stamp')
+				eSeriesIdno_i.set('n', stamps[i])
+				eSeriesIdno_dict[stamps[i]] = eSeriesIdno_i
 
-			#if applicable  add email 
-			if aut['mail'] :
-				eMail = ET.SubElement(eAuth, 'email')
-				eMail.text = aut['mail'] 
 
-			#if applicable add orcid
-			if aut['orcid'] : 
-				orcid = ET.SubElement(eAuth,'idno', {'type':'https://orcid.org/'})
-				orcid.text = aut['orcid']
+		def parse_title():
+			''' Parse title element.
+			'''
+			#___CHANGE  sourceDesc / title
+			eAnalytic = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic', ns)
+			eTitle = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic/tei:title', ns)
+			eAnalytic.remove(eTitle) 
+					
+			eTitle = ET.Element('title', {'xml:lang': dataTei["language"] })
+			eTitle.text = title
+			eAnalytic.insert(0, eTitle)
+
+
+		# Define a function to pick the affiliation in HAL, based on the search result.
 			
-			#if applicable add idHAL
-			if aut['idHAL'] : 
-				idHAL = ET.SubElement(eAuth,'idno', {'type':'idhal'})
-				idHAL.text = aut['idHAL']
+		def pick_affiliation_in_hal(search_result, affil_country='', affil_city='', affil_name='', aut='', parent_affil_id='', invalide_affil=False):
+			'''
+			This function checks the results from HAL and pick the best-matched affiliation. It will create a section based on the accociated affiliation id in the xml tree.
+			
+			Parameters:
+				- search_result (list): The result from HAL search.
+				- affil_city (str): The city of the affiliation to be added.
+				- parent_affil_id (str): The id of the parent affiliation.  
 
-			# Handling the affiliations.
-			# if affili_id is provided in authDB: Use them directly.
-			if aut['affil_id']:
-				affil_ids = aut['affil_id'].split(', ') 			
-				# Dictionary to store eAffiliation elements
-				eAffiliation_dict = {}
-				# Create an 'affiliation' element for each id
-				for affil_id in affil_ids:
-					# Create a new 'affiliation' element under the 'eAuth' element
-					eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-					# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
-					eAffiliation_i.set('ref', '#struct-' + affil_id)
-					# Store the 'eAffiliation_i' element in the dictionary with the current id as the key
-					eAffiliation_dict[affil_id] = eAffiliation_i
+			Return:
+				- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False. 
+				- best_match_affil_id (str): The dict of the best match affiliation.
+			'''
+
+			# Subfunction defintions.
+
+			# If too many candidates with parents, we drop this item as we are not sure to achieve confident extraction.
+			# We count the number of parent institutions. If too many, this indicates that it is better to look at parent affiliations.
+			def check_affil_city(df_affli_found, affil_city):
+				'''
+				Given an input DataFrame of possible affiliations, find the best match for the specified pattern. 
+
+				Parameters:
+					- df_affli_found (pd.DataFrame): The DataFrame of possible affiliations.
+					- affil_city (str): The city of the affiliation to be added. 
+
+				Return:
+					- affi_exist_in_hal (bool): If the affiliation exists in HAL, return True. Otherwise, return False.
+					- affil_dict (dict): A dictionary of the affiliation of the best match found.
+				'''
+
+				# Custom function to clean and format the address
+				def clean_and_format_address(address):
+					output = ''
+					if pd.notna(address):
+						address = unidecode(address)								
+						cleaned_address = re.sub(r'[^a-zA-Z0-9 ]', ' ', address)  # Keep only letters and numbers
+						output = cleaned_address.lower()
+				
+					return output
+
+				if not df_affli_found.empty:
+					affil_city = clean_and_format_address(affil_city)
+					if 'address_s' in df_affli_found.columns:
+						# Conditino 2: Address contains the city
+						df_affli_found['cleaned address_s'] = df_affli_found['address_s'].apply(clean_and_format_address)
+						condition_2 = df_affli_found['cleaned address_s'].str.contains(affil_city, regex=False)				
+					
+						# Condition 1: XXX [Location] in affilication name
+						pattern = "[{}]".format(affil_city)				
+						condition_1 = df_affli_found['label_s'].str.lower().str.contains(pattern, regex=False)
+
+						# Condition 3: NaN in the address
+						condition_3 = pd.isna(df_affli_found['address_s'])	
+
+						df_affli_found = df_affli_found[condition_1 | condition_2 | condition_3]
+					
+				return df_affli_found
+			
+
+			# Define a function to sort df_affli_found based on the number of words in the affliation name.
+			def sort_by_name_length(df):																			
+				# Function to calculate the number of words in a string
+				def count_words(text):
+					return len(text.split())										
+				# Add a new column 'word_count' with the number of words in 'label_s'
+				df['word_count'] = df['label_s'].apply(count_words)
+				# Sort the DataFrame based on the 'word_count' column
+				df_sorted = df.sort_values(by='word_count').reset_index(drop=True)
+				# Drop the 'word_count' column if you don't need it in the final result
+				df_sorted = df_sorted.drop(columns='word_count')
+
+				return df_sorted
+			
+
+			def check_university_group(df_affli_found):
+				'''
+				Check if an affiliation in df_affil_found is the parent of others in df_affil_found.
+				If so, we could remove the children from the candidate list.
+
+				Parameters:
+					- df_affli_found: Pandas DataFrame, the dataframe of the affiliation found in the database.
+				Return:
+					- df_affli_found: After removal.
+				'''
+
+				# Function to check if a row is a child of other rows.
+				def not_child(row):
+					other_rows = df_affli_found[df_affli_found.index != row.name]  # Exclude the current row
+					if 'parentDocid_i' in row.index:
+						parent_ids = row['parentDocid_i']
+						if isinstance(pd.isna(parent_ids), bool):
+							if pd.isna(parent_ids):
+								return True								
+						else:
+							if all(pd.isna(parent_ids)):
+								return True
+					
+						for _, other_row in other_rows.iterrows():
+							if other_row['docid'] in parent_ids:
+								return False
+							
+					return True
+
+
+				if not df_affli_found.empty:
+					# Apply the function to identify the child affiliations.
+					flag = []
+					for i in range(len(df_affli_found)):
+						flag.append(not_child(df_affli_found.iloc[i]))
+
+					df_affli_found = df_affli_found[flag]
+
+				return df_affli_found
+			
+
+			def check_published_before(df_affli_found, aut):
+				affi_exist_in_hal = False
+				best_affil_dict = {}
+
+				if not df_affli_found.empty:
+					# Check in the remaining candidates, if the authors appeared in HAL with the candidate affiliation before.
+					flag = []
+					for i in range(len(df_affli_found)):
+						field = 'structId_i:{}&fq=auth_t:"{} {}"'.format(df_affli_found.iloc[i]['docid'], aut['forename'], aut['surname'])
+						num, _ = self.reqHal(field=field)
+						flag.append(num>0)
+					if any(flag):
+						df_affli_found = df_affli_found[flag]
+						
+						affi_exist_in_hal = True
+						best_affil_dict = df_affli_found.iloc[0].to_dict()
+
+				return affi_exist_in_hal, best_affil_dict
+			
+
+			def return_callback_func(affi_exist_in_hal=False, best_affil_dict={}, affil_name=''):					
+				# # Final check: The affiliation name should not be too different from the original name.
+				# if affi_exist_in_hal:
+				# 	result_name = unidecode(best_affil_dict['label_s']).lower()
+				# 	affil_name = unidecode(affil_name).lower()
+				# 	result_words = result_name.split()
+				# 	affil_words = affil_name.split()
+				# 	difference = abs(len(result_words) - len(affil_words))
+
+				# 	if difference > 3 and not '[{}]'.format(affil_name) in result_name:
+				# 		affi_exist_in_hal=False
+				# 		best_affil_dict={}
+					
+										
+				# Return the callback function
+				return affi_exist_in_hal, best_affil_dict
+			
+
+			# End of subfunction definition. Start execution.
+
+			if search_result[0] > 0:
+				# Create a dataframe to get all the found affliations.
+				for i in range(len(search_result[1])):
+					if i == 0:
+						df_affli_found = pd.DataFrame([search_result[1][i]])
+					else:
+						df_affli_found = pd.concat([df_affli_found, pd.DataFrame([search_result[1][i]])], ignore_index=True)
+
+				# If used for invalid affiliations.
+				# Only check if it is an exact match.
+				if invalide_affil:
+					df_exact = df_affli_found[df_affli_found['label_s'].str.lower()==affil_name.lower()]
+
+					if not df_exact.empty:
+						return return_callback_func(affi_exist_in_hal=True, best_affil_dict=df_exact.iloc[0].to_dict())
+					else:
+						return return_callback_func()			
+					
+
+				# If the current parent affil list is not empty:
+				if len(parent_affil_id) > 0:
+					# If we have already some parent affils, we need to first screen the candidate results to remove 
+					# those with different parent affil ids.
+					if 'parentDocid_i' in df_affli_found.columns:
+						# Filter rows based on the condition (including NaN values and handling comma-separated values)
+						tmp_df_1 = df_affli_found[pd.isna(df_affli_found['parentDocid_i'])]
+						tmp_df_1[tmp_df_1['label_s'].apply(unidecode).str.lower()==unidecode(affil_name).lower()]
+						tmp_df_2 = df_affli_found[pd.notna(df_affli_found['parentDocid_i'])]
+						tmp_df_2 = tmp_df_2[tmp_df_2['parentDocid_i'].apply(lambda x: any(item in parent_affil_id for item in x))]
+						df_affli_found = pd.concat([tmp_df_1, tmp_df_2])
+						
+						# If after the operation, no affiliation left: Return directly.
+						if df_affli_found.empty:
+							return return_callback_func()
+
+				# Search logic: We first identify the affiliation name with the pattern Name + [Location].
+				# If not found, we use the one with the shortest name.
+										
+				# Sort by name lengh.
+				df_affli_found = sort_by_name_length(df=df_affli_found)
+
+				# Take maximal 40 records.
+				if len(df_affli_found) > 30:
+					df_affli_found = df_affli_found.iloc[:40, :]
+					# return return_callback_func()
+
+				# Check if the input affil name is an acronym.
+				# If yes, only consider the items that contain the full name.
+				if len(affil_name.split(' ')) == 1:
+					flag = df_affli_found['label_s'].str.lower().str.contains('[{}]'.format(affil_name.lower()), regex=False)
+					if any(flag):
+						df_affli_found = df_affli_found[flag]
+
+				# Remove the child affiliations in the list.
+				df_affli_found = check_university_group(df_affli_found)
+
+				# If in the remaining affiliations, the author has published before: Select the first one.
+				affi_exist_in_hal, best_affil_dict = check_published_before(df_affli_found, aut)
+				if affi_exist_in_hal:				
+					return return_callback_func(affi_exist_in_hal, best_affil_dict, affil_name)
+				
+				# # Keep only the affiliations that starts with the required name:
+				# df_without_accent = df_affli_found['label_s'].apply(unidecode).str.lower()
+				# df_affli_found = df_affli_found[df_without_accent.str.startswith(
+				# 	unidecode(affil_name[0].lower()))]
+							
+				# The affiliation country needs to match.
+				if affil_country:
+					try:
+						df_affli_found = df_affli_found[df_affli_found['country_s']==affil_country]
+					except:
+						pass					
+				
+				# If the affiliation name ends with [Location], pick the one that matches the actual location.
+				df_affli_found = check_affil_city(df_affli_found, affil_city)
+				if df_affli_found.empty:	
+					return return_callback_func()
+				
+				# If there is exact matched affil name:
+				df_exact = df_affli_found[df_affli_found['label_s'].str.lower()==affil_name.lower()]
+				# affil name [XXX]
+				pattern = re.compile(r'{} \[.*\]'.format(affil_name.lower()))
+				df_exact = pd.concat([
+					df_exact,
+					df_affli_found[[element is not None for element in df_affli_found['label_s'].str.lower().apply(pattern.match)]]
+				])
+				# affil name [City name]
+				if pd.notna(affil_city):
+					df_exact = pd.concat([
+							df_exact,
+							df_affli_found[df_affli_found['label_s'].str.lower()=='{} [{}]'.format(affil_name.lower(), affil_city.lower())],	  
+						])
+							
+				if not df_exact.empty:
+					return return_callback_func(True, df_exact.iloc[0].to_dict(), affil_name)
+				
+				# If less than three affiliation remains, take it. Otherwise, return not found.
+				if len(df_affli_found) <= 3:
+					affi_exist_in_hal = True
+					best_affil_dict = df_affli_found.iloc[0].to_dict()
+
+					return return_callback_func(affi_exist_in_hal, best_affil_dict, affil_name)
+				else:
+					return return_callback_func()	
 			else:
-				# Extract the affiliation name from the search results.
-				aut_affils = aut['affil']
-				if aut_affils[0] == None:
-					aut_affils = ['Unknown']
-				for aut_affil in aut_affils:
-					# Remove the ';' at the end of the affiliation. 
-					if aut_affil.endswith('; '):
-						aut_affil = aut_affil.rstrip('; ')                   
+				return return_callback_func()
+
+
+		def parse_authors():
+			''' Parse authors element.
+			'''
+			eAnalytic = root.find(biblFullPath+'/tei:sourceDesc/tei:biblStruct/tei:analytic', ns)
+			#___CHANGE  sourceDesc / biblStruct / analytics / authors			
+			author = root.find(biblStructPath+'/tei:analytic/tei:author', ns)
+			eAnalytic.remove(author)
+
+			# Locate the back section of the xml file.
+			eListOrg = root.find('tei:text/tei:back/tei:listOrg', ns)
+			eOrg = root.find('tei:text/tei:back/tei:listOrg/tei:org', ns)
+			eListOrg.remove(eOrg)
+
+			## Sub-function definitions for handling affiliations.
 					
-					# Search HAL to find the affiliation.
-					affi_exist_in_hal = False
-					search_result = self.reqHalRef(ref_name='structure', value=aut_affil)
-					if search_result[0] > 0: # Find affiliation with the same names in HAL.
-						# Check the HAL affiliation contains some other affiliation.
-						for i in range(len(search_result[1])):
-							affli_info = search_result[1][i]
-							if aut_affil.lower() == affli_info['label_s'].lower():								
-								# Set affil_id
-								affil_id =  search_result[1][i]['docid']
-								# Create a new 'affiliation' element under the 'eAuth' element
-								eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
-								# Set the 'ref' attribute of the 'affiliation' element with a value based on the current id
-								eAffiliation_i.set('ref', '#struct-' + affil_id)
-								affi_exist_in_hal = True
-								break
+			# Define a subfuntion to add a new affiliation.
+			def add_new_affiliation(new_affiliation_idx, new_affliation, aut_affil):
+				'''
+				This is a subfunction that create a new affiliation. First it will check if the affiliation already exists as a local structure.
+				If yes, it will directly refer to that. If no, it will create a new one.
+
+				Parameters:
+				- new_affiliation_idx (int): The index of the new affiliation.
+				- new_affliation (list): The list of new affiliations.
+				- aut_affil (str): The affiliation of the author.
+
+				Returns:
+				- new_affiliation_idx (int): The index of the new affiliation.
+				- new_affliation (list): The list of new affiliations.		
+
+				'''
+
+				# Dealing with special characters:
+				aut_affil = re.sub(r'&amp;', '& ', aut_affil)
+
+				# If it is the first new affiliation, create directly.
+				if new_affiliation_idx == 0:
+					new_affiliation_idx += 1 # Update the index.
+					# Create the new organization.
+					eBackOrg_i = ET.SubElement(eListOrg, 'org')
+					eBackOrg_i.set('type', 'institution')
+					eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
+					eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
+					eBackOrg_i_name.text = aut_affil
+					new_affliation.append(aut_affil)
+					# Make reference to the created affliation.
+					eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+					eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+				else: # If it is not the first new affiliation, search if it has been created by us before.
+					try:
+						idx = new_affliation.index(aut_affil)
+						# If it has been created, make reference to it.
+						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+						eAffiliation_manual.set('ref', 'localStruct-' + str(idx+1))	
+					except ValueError: # If not created, create a new one.
+						# Update the index.
+						new_affiliation_idx += 1
+						# Create the new organization.
+						eBackOrg_i = ET.SubElement(eListOrg, 'org')
+						eBackOrg_i.set('type', 'institution')
+						eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
+						eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
+						eBackOrg_i_name.text = aut_affil
+						new_affliation.append(aut_affil)	
+						# Make reference to the created affliation.
+						eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
+						eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+
+				return new_affiliation_idx, new_affliation
+			
+
+			# Sub-functions supporting parsing affiliations.
+			def add_affiliation_by_affil_id(eAuth, affil_id):
+				''' 
+				If affiliation_id is provided in authDB: Use them directly to create a section for affiliation in the tei-xml tree.
+
+				Parameters: 
+				- eAuth (ET.Element): The element to which the 'affiliation' element will be added. 
+				- affil_id (str): The id of the affiliation to be added. 
+
+				Returns: None
+				'''
+
+				# Define a subfunction for adding the affiliation element in the xml tree.
+				def add_subelement_for_affil_id(eAuth, affil_id):
+					eAffiliation_i = ET.SubElement(eAuth, 'affiliation')
+					eAffiliation_i.set('ref', '#struct-' + affil_id)
+
+					# For debugging onle: Print also affiliation name.
+					# Remove this after debugging!						
+					if self.debug_mode and not self.upload_to_hal:
+						try:
+							search_result = self.reqHalRef(ref_name='structure', 
+										value='(docid:{})'.format(affil_id), 
+										return_field='&fl=label_s&wt=json')
+							eAffiliation_i.set('name', search_result[1][0]['label_s'])
+						except:
+							pass
 					
-					# If the affiliation does not exist in HAL, add the affiliation manually.
-					if not affi_exist_in_hal: 
-						# If it is the first new affiliation, create directly.
-						if new_affiliation_idx == 0:
-							new_affiliation_idx += 1 # Update the index.
-							# Create the new organization.
-							eBackOrg_i = ET.SubElement(eListOrg, 'org')
-							eBackOrg_i.set('type', 'institution')
-							eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
-							eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
-							eBackOrg_i_name.text = aut_affil
-							new_affliation.append(aut_affil)
-							# Make reference to the created affliation.
-							eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-							eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
-						else: # If it is not the first new affiliation, search if it has been created by us before.
+
+				# Check if 'affiliation' subelement exists
+				existing_affiliations = eAuth.findall('affiliation')
+
+				if existing_affiliations:
+					# 'affiliation' subelement exists
+					found_matching_affiliation = False
+
+					# Check if any existing 'affiliation' has the same affil_id
+					for affiliation in existing_affiliations:
+						if 'ref' in affiliation.attrib and affiliation.attrib['ref'] == '#struct-' + affil_id:
+							found_matching_affiliation = True
+							# print(f"Matching 'affiliation' found with affil_id {affil_id}: {affiliation}")
+							break
+
+					if not found_matching_affiliation:
+						# No matching 'affiliation' found, create a new one
+						add_subelement_for_affil_id(eAuth, affil_id)
+						# print(f"New 'affiliation' created with affil_id {affil_id}: {eAffiliation_i}")
+				else:
+					# 'affiliation' subelement does not exist, create a new one
+					add_subelement_for_affil_id(eAuth, affil_id)
+					# print(f"New 'affiliation' created with affil_id {affil_id}: {eAffiliation_i}")
+
+
+			# Define a function to check if the matched affiliation has parent affiliation.
+			def add_affil_and_parent_affil(affil_dict, eAuth):
+				affil_ids = []
+				affil_ids.append(affil_dict['docid'])
+				if 'parentValid_s' in affil_dict and 'parentDocid_i' in affil_dict:
+					try:
+						for idx, parent_id in enumerate(affil_dict['parentDocid_i']):
+							if affil_dict['parentValid_s'][idx]=='VALID':
+								affil_ids.append(parent_id)
+					except:
+						pass
+
+				# Create a new 'affiliation' element under the 'eAuth' element
+				for affil_id in affil_ids:
+					add_affiliation_by_affil_id(eAuth=eAuth, affil_id=affil_id)							
+			
+
+			# Subfunction to transform a country name to its abbreviation.
+			def generate_abbreviation(country_name):
+					country = None
+					if country_name:
+						try:
+							country = pycountry.countries.search_fuzzy(country_name)[0]
+							country = country.alpha_2.lower()						
+						except LookupError:
+							pass
+						
+					return country
+					
+			
+			# Defuzzy affiliation names.
+			def defuzzy_affil_name(aut_affils, index):
+				affil_name = aut_affils[index]
+
+				replacements = [
+					('electricite de france', 'edf'),
+					('mines paristech', 'mines paris - psl'),
+					('ecole ', ''),
+					('randd', 'r d')
+					# Add more replacement pairs as needed
+				]
+
+				# Apply the replacements
+				output_string = unidecode(affil_name).lower()
+				for old_str, new_str in replacements:
+					output_string = output_string.replace(old_str, new_str)
+
+				aut_affils[index] = output_string
+
+				return output_string
+			
+
+			def enrich_affil_name(aut_affils, index, affil_country):
+				'''
+				If some criteria are met, generate another item based on the current affiliation name.
+				Examples:
+				- If the affiliation name contains 'university' and it is a french institute, add 'universite'.
+				- If the affiliation name contains an acronym in the format of (acronym), add the acronym.
+
+				Parameters:
+				- aut_affils (list): A list of author affiliations.
+				- index (int): The index of the current affiliation.
+				- affil_country (str): The country of the current affiliation.
+
+				Returns:
+				- aut_affil (str): The new affiliation name.
+
+				'''
+				aut_affil = aut_affils[index]
+				if affil_country == 'fr' or affil_country == '':
+					if 'university' in aut_affil.lower():
+						index_university = aut_affil.lower().find('university')
+						index_comma = aut_affil.lower().find(',', index_university)
+						old_aut_affil = aut_affil.lower()[index_university:index_comma].strip()
+						new_aut_affil = old_aut_affil.replace('university', 'universite')
+						new_aut_affil = new_aut_affil.replace('of', '')
+						aut_affils[index] += ', ' + new_aut_affil
+
+				# If aut_affil contains acronym, extract the acronym.
+				# Define a regular expression pattern to match "(XXX)"
+				pattern = r'\((\w+)\)'
+				# Use re.search to find the pattern in the string
+				match = re.search(pattern, aut_affil)
+				# Check if the pattern is found
+				if match:
+					# Extract the content inside the parentheses
+					affi_acronym = match.group(1)
+					aut_affils[index] = aut_affils[index].replace(' ({})'.format(affi_acronym), '')
+					aut_affils[index] += ', ' + affi_acronym
+
+				return aut_affil
+			
+				
+			# Start handling the affiliations.
+
+			# Reset new affiliation index and list.
+			new_affiliation_idx = 0
+			new_affliation = []		
+
+			# For each author, write author information to the xml tree.
+			for aut in auths : 
+				role  = 'aut' if not aut['corresp'] else 'crp' #correspond ou non
+				eAuth = ET.SubElement(eAnalytic, 'author', {'role':role}) 
+				ePers = ET.SubElement(eAuth, 'persName')
+
+				eForename = ET.SubElement(ePers, 'forename', {'type':"first"})
+				if not aut['forename'] : eForename.text = aut['initial']
+				else : eForename.text = aut['forename']
+
+				eSurname = ET.SubElement(ePers, 'surname')
+				eSurname.text = aut['surname']	
+
+				#if applicable  add email 
+				if aut['mail'] :
+					eMail = ET.SubElement(eAuth, 'email')
+					eMail.text = aut['mail'] 
+
+				#if applicable add orcid
+				if aut['orcid'] : 
+					orcid = ET.SubElement(eAuth,'idno', {'type':'https://orcid.org/'})
+					orcid.text = aut['orcid']
+				
+				#if applicable add idHAL
+				if aut['idHAL'] : 
+					idHAL = ET.SubElement(eAuth,'idno', {'type':'idhal'})
+					idHAL.text = aut['idHAL']
+					
+				# if affili_id is provided in authDB: Use them directly.
+				if aut['affil_id']:
+					affil_ids = aut['affil_id'].split(', ') 			
+					# Create an 'affiliation' element for each id
+					for affil_id in affil_ids:
+						add_affiliation_by_affil_id(eAuth=eAuth, affil_id=affil_id)						
+				else:
+					# Extract the affiliation name from the search results.
+					aut_affils = aut['affil']
+					if aut_affils[0] == None:
+						aut_affils = ['Unknown']
+					affil_countries = aut['affil_country']
+					affli_cities = aut['affil_city']
+					author_name = {'forename': aut['forename'], 'surname': aut['surname']}
+
+					aut_affils_ori = copy.deepcopy(aut_affils)
+					# For french affiliations: Create a new affilation by replacing "university" to "universite"
+					for index in range(len(aut_affils)):												
+						affil_country = generate_abbreviation(affil_countries[index])
+						affil_city = affli_cities[index]						
+						
+						# Defuzzy affili_unit.
+						aut_affil = defuzzy_affil_name(aut_affils, index)
+						# Enrich the affiliation name.
+						aut_affil = enrich_affil_name(aut_affils, index, affil_country)
+						
+
+					# Loop for all the affliations from one author.						
+					for index, aut_affil in enumerate(aut_affils):
+						# Initially set to be not existed.
+						affi_exist_in_hal = False
+						affil_country = generate_abbreviation(affil_countries[index])
+						affil_city = affli_cities[index]
+
+						# Remove the ';' at the end of the affiliation. 
+						if aut_affil.endswith('; '):
+							aut_affil = aut_affil.rstrip('; ')
+
+						# If the affliation is like department XXX, University XXX.
+						# If so, extract the department and then university name.
+						aut_affil_list = aut_affil.split(', ')
+
+						# Rearrange the order of the parts.
+						keywords_to_move_last = ['university', 'universite']
+						for keyword in keywords_to_move_last:
+							for part in aut_affil_list:
+								if keyword in part.lower():
+									aut_affil_list.remove(part)
+									aut_affil_list.append(part)
+						
+						# In case "department of law, order, and XXX", this will generate too many items.
+						if len(aut_affil_list)>=6:
+							aut_affil_list = aut_affil_list[-1:]
+
+						# Start to search from the right-most unit (largest):
+						parent_affil_id = [] # Store all the parent affiliations. Use to exclude child affilation with the same name.
+						for affil_unit in reversed(aut_affil_list):						            											
+							affi_unit_exist_in_hal = False
+
+							# Search for the valid affliations in HAL.
 							try:
-								idx = new_affliation.index(aut_affil)
-								# If it has been created, make reference to it.
-								eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-								eAffiliation_manual.set('ref', 'localStruct-' + str(idx+1))	
-							except ValueError: # If not created, create a new one.
-								# Update the index.
-								new_affiliation_idx += 1
-								# Create the new organization.
-								eBackOrg_i = ET.SubElement(eListOrg, 'org')
-								eBackOrg_i.set('type', 'institution')
-								eBackOrg_i.set('xml:id', 'localStruct-' + str(new_affiliation_idx))
-								eBackOrg_i_name = ET.SubElement(eBackOrg_i, 'orgName')
-								eBackOrg_i_name.text = aut_affil
-								new_affliation.append(aut_affil)	
-								# Make reference to the created affliation.
-								eAffiliation_manual = ET.SubElement(eAuth, 'affiliation')				
-								eAffiliation_manual.set('ref', 'localStruct-' + str(new_affiliation_idx))
+								search_result = self.reqHalRef(ref_name='structure', 
+											value='(text:({}) valid_s:"VALID")'.format(affil_unit), 
+											return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
+							except:
+								search_result = [0]
+								pass							
+							# Get the best-matched one and add it to the xml-tree.
+							affi_unit_exist_in_hal, affil_dict = pick_affiliation_in_hal(search_result, affil_country, affil_city, aut=author_name, affil_name=affil_unit, parent_affil_id=parent_affil_id)
+							# If found, add to the xml tree.
+							if affi_unit_exist_in_hal:
+								parent_affil_id.append(affil_dict['docid'])
+								if not affil_country:
+									affil_country = affil_dict['country_s']
+								add_affil_and_parent_affil(eAuth=eAuth, affil_dict=affil_dict)
+								affi_exist_in_hal = True						
+						
+						# If the affiliation does not exist in HAL, add the affiliation manually.
+						# If the affiliation is France, do not create new affiliation as HAL is used for evaluating affiliations, 
+						# so there is a stricker rule regarding creating affiliations.
+						if not affi_exist_in_hal and affil_country:
+							if affil_country.lower() != 'fr' and affil_country != '':
+								# Before adding new affiliation, check if the affiliation exists in HAL but not VALID
+								# Search for the valid affliations in HAL.
+								try:
+									# Here we don't require that the affiliation in HAL is valid.
+									aut_affil = aut_affils_ori[index]
+									search_result = self.reqHalRef(ref_name='structure', 
+												value='(text:"{}")'.format(aut_affil), 
+												return_field='&fl=docid,label_s,address_s,country_s,parentName_s,parentDocid_i,parentValid_s&wt=json&rows=100')
+								except:
+									search_result = [0]
+									pass
+								affi_exist_in_hal, affil_dict = pick_affiliation_in_hal(search_result, affil_name=aut_affil, invalide_affil=True)
+								if not affi_exist_in_hal:
+									new_affiliation_idx, new_affliation = add_new_affiliation(new_affiliation_idx, new_affliation, aut_affil) 
+								else: # If invalid affiliation exist in HAL.
+									add_affiliation_by_affil_id(eAuth=eAuth, affil_id=affil_dict['docid'])						
+							
 
-		# In the end, if no new affiliations are added, remove the 'eBack' element.
-		if new_affiliation_idx == 0:
-			eBack_Parent = root.find('tei:text', ns)
-			eBack = root.find('tei:text/tei:back', ns)
-			eBack_Parent.remove(eBack)						
-					
-		## ADD SourceDesc / bibliStruct / monogr : isbn
-		eMonogr = root.find(biblStructPath+'/tei:monogr', ns)
-		idx_item = 0
+			# In the end, if no new affiliations are added, remove the 'eBack' element.
+			if new_affiliation_idx == 0:
+				eBack_Parent = root.find('tei:text', ns)
+				eBack = root.find('tei:text/tei:back', ns)
+				eBack_Parent.remove(eBack)
 
-		## ne pas coller l'ISBN si c'est un doctype COMM sinon cela créée une erreur (2021-01)
-		if dataTei['isbn']  and not dataTei['doctype'] == 'COMM':  
-			eIsbn = ET.Element('idno', {'type':'isbn'})
-			eIsbn.text = dataTei["isbn"]
-			eMonogr.insert(idx_item, eIsbn)
-			idx_item += 1
+		
+		def parse_bib_info():
+			''' Parse bib info like journal, page, keywords, etc.
+			'''
+			## ADD SourceDesc / bibliStruct / monogr : isbn
+			eMonogr = root.find(biblStructPath+'/tei:monogr', ns)
+			idx_item = 0
 
-		## ADD SourceDesc / bibliStruct / monogr : issn
-		# if journal is in Hal
-		if dataTei['journalId'] :
-			eHalJid = ET.Element('idno', {'type':'halJournalId'})
-			eHalJid.text = dataTei['journalId']
-			eHalJid.tail = '\n'+'\t'*8
-			eMonogr.insert(idx_item, eHalJid)
-			idx_item += 1
-
-		# if journal not in hal : paste issn
-		if not dataTei['doctype'] == 'COMM':
-			if not dataTei['journalId'] and dataTei["issn"] :
-				eIdIssn = ET.Element('idno', {'type':'issn'})
-				eIdIssn.text = dataTei['issn']
-				eIdIssn.tail = '\n'+'\t'*8
-				eMonogr.insert(idx_item, eIdIssn)
+			## ne pas coller l'ISBN si c'est un doctype COMM sinon cela créée une erreur (2021-01)
+			if dataTei['isbn']  and not dataTei['doctype'] == 'COMM':  
+				eIsbn = ET.Element('idno', {'type':'isbn'})
+				eIsbn.text = dataTei["isbn"]
+				eMonogr.insert(idx_item, eIsbn)
 				idx_item += 1
 
-		# if journal not in hal and doctype is ART then paste journal title
-		if not dataTei['journalId'] and dataTei['doctype'] == "ART" : 
-			eTitleJ = ET.Element('title', {'level':'j'})
-			eTitleJ.text =  pub_name
-			eTitleJ.tail = '\n'+'\t'*8
-			eMonogr.insert(idx_item, eTitleJ)
-			idx_item += 1
+			## ADD SourceDesc / bibliStruct / monogr : issn
+			# if journal is in Hal
+			if dataTei['journalId'] :
+				eHalJid = ET.Element('idno', {'type':'halJournalId'})
+				eHalJid.text = dataTei['journalId']
+				eHalJid.tail = '\n'+'\t'*8
+				eMonogr.insert(idx_item, eHalJid)
+				idx_item += 1
 
-		# if it is COUV or OUV paste book title
-		if dataTei['doctype'] == "COUV" or dataTei['doctype'] == "OUV" :
-			eTitleOuv = ET.Element('title', {'level':'m'})
-			eTitleOuv.text = pub_name
-			eTitleOuv.tail = '\n'+'\t'*8
-			eMonogr.insert(idx_item, eTitleOuv)
-			idx_item += 1
+			# if journal not in hal : paste issn
+			if not dataTei['doctype'] == 'COMM':
+				if not dataTei['journalId'] and dataTei["issn"] :
+					eIdIssn = ET.Element('idno', {'type':'issn'})
+					eIdIssn.text = dataTei['issn']
+					eIdIssn.tail = '\n'+'\t'*8
+					eMonogr.insert(idx_item, eIdIssn)
+					idx_item += 1
 
-		## ADD SourceDesc / bibliStruct / monogr / meeting : meeting
-		if dataTei['doctype'] == 'COMM' : 
-			#conf title
-			eMeeting = ET.Element('meeting')
-			eMonogr.insert(idx_item, eMeeting)
-			eTitle = ET.SubElement(eMeeting, 'title')
-			eTitle.text = self.info_complement['confname']
-					
-			#meeting date
-			eDate = ET.SubElement(eMeeting, 'date', {'type':'start'}) 
-			eDate.text = self.info_complement['confdate']
-					
-			#settlement
-			eSettlement = ET.SubElement(eMeeting, 'settlement')
-			eSettlement.text = self.info_complement['conflocation'] if self.info_complement['conflocation'] else 'unknown'
+			# if journal not in hal and doctype is ART then paste journal title
+			if not dataTei['journalId'] and dataTei['doctype'] == "ART" : 
+				eTitleJ = ET.Element('title', {'level':'j'})
+				eTitleJ.text =  pub_name
+				eTitleJ.tail = '\n'+'\t'*8
+				eMonogr.insert(idx_item, eTitleJ)
+				idx_item += 1
 
-			#country
-			eSettlement = ET.SubElement(eMeeting, 'country',{'key':'fr'})
+			# if it is COUV or OUV paste book title
+			if dataTei['doctype'] == "COUV" or dataTei['doctype'] == "OUV" :
+				eTitleOuv = ET.Element('title', {'level':'m'})
+				eTitleOuv.text = pub_name
+				eTitleOuv.tail = '\n'+'\t'*8
+				eMonogr.insert(idx_item, eTitleOuv)
+				idx_item += 1
 
-		#___ CHANGE  sourceDesc / monogr / imprint :  vol, issue, page, pubyear, publisher
-		eImprint = root.find(biblStructPath+'/tei:monogr/tei:imprint', ns)
-		for e in list(eImprint):
-			if e.get('unit') == 'issue': 
-				if issue: 
-					if isinstance(issue, str):
-						e.text = issue 
-					else:
-						if not math.isnan(issue):
-							e.text = str(int(issue))
-			if e.get('unit') == 'volume' : 
-				if volume: 
-					if isinstance(volume, str):
-						e.text = volume 
-					else:
-						if not math.isnan(volume):
-							str(int(volume))
-			if e.get('unit') == 'pp' : 
-				if page_range and isinstance(page_range, str): e.text = page_range 
-			if e.tag.endswith('date') and isinstance(cover_date, str): e.text = cover_date
-			if e.tag.endswith('publisher') : e.text = self.info_complement['publisher']
+			## ADD SourceDesc / bibliStruct / monogr / meeting : meeting
+			if dataTei['doctype'] == 'COMM' : 
+				#conf title
+				eMeeting = ET.Element('meeting')
+				eMonogr.insert(idx_item, eMeeting)
+				eTitle = ET.SubElement(eMeeting, 'title')
+				eTitle.text = self.info_complement['confname']
+						
+				#meeting date
+				eDate = ET.SubElement(eMeeting, 'date', {'type':'start'}) 
+				eDate.text = self.info_complement['confdate']
+						
+				#settlement
+				eSettlement = ET.SubElement(eMeeting, 'settlement')
+				eSettlement.text = self.info_complement['conflocation'] if self.info_complement['conflocation'] else 'unknown'
 
-		#_____ADD  sourceDesc / biblStruct : DOI & Pubmed
-		eBiblStruct = root.find(biblStructPath, ns)
-		if self.docid['doi'] : 
-			eDoi = ET.SubElement(eBiblStruct, 'idno', {'type':'doi'} )
-			eDoi.text = self.docid['doi']
+				#country
+				eSettlement = ET.SubElement(eMeeting, 'country',{'key':'fr'})
 
-		#___CHANGE  profileDesc / langUsage / language
-		eLanguage = root.find(biblFullPath+'/tei:profileDesc/tei:langUsage/tei:language', ns)
-		eLanguage.attrib['ident'] = dataTei["language"]
+			#___ CHANGE  sourceDesc / monogr / imprint :  vol, issue, page, pubyear, publisher
+			eImprint = root.find(biblStructPath+'/tei:monogr/tei:imprint', ns)
+			for e in list(eImprint):
+				if e.get('unit') == 'issue': 
+					if issue: 
+						if isinstance(issue, str):
+							e.text = issue 
+						else:
+							if not math.isnan(issue):
+								e.text = str(int(issue))
+				if e.get('unit') == 'volume' : 
+					if volume: 
+						if isinstance(volume, str):
+							e.text = volume 
+						else:
+							if not math.isnan(volume):
+								str(int(volume))
+				if e.get('unit') == 'pp' : 
+					if page_range and isinstance(page_range, str): e.text = page_range 
+				if e.tag.endswith('date') and isinstance(cover_date, str): e.text = cover_date
+				if e.tag.endswith('publisher') : e.text = self.info_complement['publisher']
 
-		#___CHANGE  profileDesc / textClass / keywords/ term
-		eKeywords = root.find(biblFullPath+'/tei:profileDesc/tei:textClass/tei:keywords', ns)
-		eKeywords.clear()
-		eKeywords.set('scheme', 'author')
-		for i in range(0, len(keywords_list)):
-			eTerm_i = ET.SubElement(eKeywords, 'term')
-			eTerm_i.set('xml:lang', dataTei['language'])
-			eTerm_i.text = keywords_list[i]
+			#_____ADD  sourceDesc / biblStruct : DOI & Pubmed
+			eBiblStruct = root.find(biblStructPath, ns)
+			if self.docid['doi'] : 
+				eDoi = ET.SubElement(eBiblStruct, 'idno', {'type':'doi'} )
+				eDoi.text = self.docid['doi']
 
-		#___CHANGE  profileDesc / textClass / classCode : hal domaine & hal doctype
-		eTextClass = root.find(biblFullPath+'/tei:profileDesc/tei:textClass', ns)
-		for e in list(eTextClass):
-			if e.tag.endswith('classCode') : 
-				if e.attrib['scheme'] == 'halDomain': e.attrib['n'] = dataTei['domain']
-				if e.attrib['scheme'] == 'halTypology': e.attrib['n'] = dataTei['doctype']
+			#___CHANGE  profileDesc / langUsage / language
+			eLanguage = root.find(biblFullPath+'/tei:profileDesc/tei:langUsage/tei:language', ns)
+			eLanguage.attrib['ident'] = dataTei["language"]
 
-		#___CHANGE  profileDesc / abstract 
-		eAbstract = root.find(biblFullPath+'/tei:profileDesc/tei:abstract', ns)
-		eAbstract.text = dataTei['abstract']
+			#___CHANGE  profileDesc / textClass / keywords/ term
+			eKeywords = root.find(biblFullPath+'/tei:profileDesc/tei:textClass/tei:keywords', ns)
+			eKeywords.clear()
+			eKeywords.set('scheme', 'author')
+			for i in range(0, len(keywords_list)):
+				eTerm_i = ET.SubElement(eKeywords, 'term')
+				eTerm_i.set('xml:lang', dataTei['language'])
+				eTerm_i.text = keywords_list[i]
+
+			#___CHANGE  profileDesc / textClass / classCode : hal domaine & hal doctype
+			eTextClass = root.find(biblFullPath+'/tei:profileDesc/tei:textClass', ns)
+			for e in list(eTextClass):
+				if e.tag.endswith('classCode') : 
+					if e.attrib['scheme'] == 'halDomain': e.attrib['n'] = dataTei['domain']
+					if e.attrib['scheme'] == 'halTypology': e.attrib['n'] = dataTei['doctype']
+
+			#___CHANGE  profileDesc / abstract 
+			eAbstract = root.find(biblFullPath+'/tei:profileDesc/tei:abstract', ns)
+			eAbstract.text = dataTei['abstract']
+
+
+		# Prepare differe parts of the tree.		
+		parse_funder()
+		parse_stamp()
+		parse_title()
+		parse_authors()
+		parse_bib_info()			
 
 		return tree
 
