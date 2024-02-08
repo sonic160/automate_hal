@@ -29,8 +29,8 @@ if __name__ == '__main__':
     # For debugging: Only upload the first rowRange records.
     # Comment this line if you want to upload all the records.
     rowRange=[0, 10]
-    auto_hal.debug_affiliation_search = True
-    auto_hal.debug_hal_upload = True
+    auto_hal.debug_affiliation_search = False
+    auto_hal.debug_hal_upload = False
     auto_hal.allow_create_new_affiliation = False
 
     auto_hal.process_papers(df_result=df_result)
