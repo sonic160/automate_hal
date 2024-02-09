@@ -88,7 +88,8 @@ Among them, the following tools are particularly relervant to this project:
 
 - [HAL imports](https://github.com/ml4rrieu/HAL_imports): It is a open-source repository in Github that automatically upload papers to HAL from a Scopus search results. Our project is built on this one, but we made the following improvements:
     - We add the `search_query` mode.
-    - We optimize the handling of affiliation. Our script will search affiliation in HAL and use the HAL id of the existing affiliation.    
+    - We optimize the handling of affiliation. Our script will search affiliation in HAL and use the HAL id of the existing affiliation.
+    - We fix the bugs that all the conference locations were set to France.    
     - We re-design the code to be in object-oriented programming, and use pybliometric to improve the interaction with HAL.
     - We change the code of generating the xml-tei file, so that the affiliations of each author are added, and new affiations can be created in HAL if it does not exist in HAL already.
     - We added the option to upload the papers to HAL with user-defined stamps.
