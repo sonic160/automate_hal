@@ -901,9 +901,16 @@ class TreatPaperInformation(AutomateHal):
 				ab.confdate[0][0], ab.confdate[0][1], ab.confdate[0][2])
 		else:
 			confdate = ''
+		
+		# Extract conference location.
+		if 'conflocation' in ab._confevent.keys():
+			conf_loc = ab._confevent['conflocation']
+		else:
+			conf_loc = None
+
 		# Output the results:
 		fileds = ['funding', 'funding_text', 'language', 'isbn', 'confname', 'confdate', 'conflocation', 'startingPage', 'endingPage', 'publisher']
-		values = [ab.funding, ab.funding_text, ab.language, ab.isbn, ab.confname, confdate, ab.conflocation, ab.startingPage, ab.endingPage, ab.publisher]
+		values = [ab.funding, ab.funding_text, ab.language, ab.isbn, ab.confname, confdate, conf_loc, ab.startingPage, ab.endingPage, ab.publisher]
 		self.update_doc_data(field_names=fileds, values=values)
 
 
@@ -2608,10 +2615,29 @@ class GenerateXMLTree(AutomateHal):
 					
 			#settlement
 			eSettlement = ET.SubElement(eMeeting, 'settlement')
-			eSettlement.text = self.doc_data['conflocation'] if self.doc_data['conflocation'] else 'unknown'
+			if self.doc_data['conflocation'] is not None:
+				conf_city = self.doc_data['conflocation']['city']
+				eSettlement.text = conf_city if conf_city else 'unknown'
+			else:
+				eSettlement.text = 'Unknown city'
 
-			#country
-			eSettlement = ET.SubElement(eMeeting, 'country', {'key':'fr'})
+			# country
+			# Initial values
+			country_abrev = 'fr'
+			country_name = 'Unknown country'
+
+			if self.doc_data['conflocation'] is not None:
+				conf_country = self.doc_data['conflocation']['@country']
+
+				try:
+					country = pycountry.countries.search_fuzzy(conf_country)[0]
+					country_abrev = country.alpha_2.lower()
+					country_name = country.name
+				except LookupError:
+					pass
+				
+			eSettlement = ET.SubElement(eMeeting, 'country', {'key': country_abrev})
+			eSettlement.text = country_name
 
 		#___ CHANGE  sourceDesc / monogr / imprint :  vol, issue, page, pubyear, publisher
 		eImprint = root.find(biblStructPath+'/tei:monogr/tei:imprint', ns)
@@ -2850,7 +2876,7 @@ class GenerateXMLTree(AutomateHal):
 if __name__ == '__main__':
 	# Define search query.
 	# search_query = 'AU-ID(55659850100) OR AU-ID(55348807500) OR AU-ID(7102745133) AND PUBYEAR > 2017 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)'
-	# search_query = 'AU-ID(55348807500) AND PUBYEAR > 2016 AND PUBYEAR < 2025' # Zhiguo Zeng
+	search_query = 'AU-ID(55348807500) AND PUBYEAR > 2016 AND PUBYEAR < 2025' # Zhiguo Zeng
 	# search_query = 'AU-ID(7005289082) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Enrico Zio
 	# search_query = 'AU-ID(7005289082) AND PUBYEAR > 2000  AND PUBYEAR < 2025' # Enrico Zio
 	# search_query = 'AU-ID(6602469780) AND PUBYEAR > 2000 AND PUBYEAR < 2025 AND AFFIL (centralesupelec)' # Bernard Yannou
@@ -2858,7 +2884,7 @@ if __name__ == '__main__':
 	# search_query = 'AU-ID(14049106600) AND PUBYEAR > 2000  AND PUBYEAR < 2025 AND (AFFIL (centralesupelec) OR AFFIL (Supelec))' # Nicola Pedroni
 	# search_query = 'AU-ID(7102745133) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Anne Barros
 	# search_query = 'EID (2-s2.0-85107087996)'
-	search_query = 'AU-ID(7801563868) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Nabil Anwer
+	# search_query = 'AU-ID(7801563868) AND PUBYEAR > 2000 AND PUBYEAR < 2025' # Nabil Anwer
 
 	results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
 	df_result = pd.DataFrame(results.results)
@@ -2875,8 +2901,8 @@ if __name__ == '__main__':
 
 	# Define the stamps you want to add to the paper.
 	# If you don't want to add stamp: stamps = []
-	# stamps = ['LGI-SR', 'CHAIRE-RRSC']
-	stamps = [] # Add your stamps here
+	stamps = ['LGI-SR', 'CHAIRE-RRSC']
+	# stamps = [] # Add your stamps here
 
 	# Load the scopus dataset.
 	auto_hal = AutomateHal(perso_data_path=perso_data_path, affil_db_path=affil_db_path,
@@ -2886,8 +2912,8 @@ if __name__ == '__main__':
 	# Comment this line if you want to upload all the records.
 	row_range=[0, 140]
 
-	auto_hal.debug_affiliation_search = True
-	auto_hal.debug_hal_upload = True
-	auto_hal.allow_create_new_affiliation = False
+	auto_hal.debug_affiliation_search = False
+	auto_hal.debug_hal_upload = False
+	auto_hal.allow_create_new_affiliation = True
 
 	auto_hal.process_papers(df_result=df_result, row_range=row_range)
