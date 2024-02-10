@@ -2676,13 +2676,18 @@ class GenerateXMLTree(AutomateHal):
 
 		#___CHANGE  profileDesc / textClass / keywords/ term
 		eKeywords = root.find(biblFullPath+'/tei:profileDesc/tei:textClass/tei:keywords', ns)
-		eKeywords.clear()
-		eKeywords.set('scheme', 'author')
+		eKeywords.clear()		
 		keywords_list = self.doc_data_for_tei['kw_list']
-		for i in range(0, len(keywords_list)):
+		eKeywords.set('scheme', 'author')
+		if len(keywords_list)==0:
 			eTerm_i = ET.SubElement(eKeywords, 'term')
 			eTerm_i.set('xml:lang', self.doc_data_for_tei['language'])
-			eTerm_i.text = keywords_list[i]
+			eTerm_i.text = 'No keywords'
+		else:
+			for i in range(0, len(keywords_list)):
+				eTerm_i = ET.SubElement(eKeywords, 'term')
+				eTerm_i.set('xml:lang', self.doc_data_for_tei['language'])
+				eTerm_i.text = keywords_list[i]
 
 		#___CHANGE  profileDesc / textClass / classCode : hal domaine & hal doctype
 		eTextClass = root.find(biblFullPath+'/tei:profileDesc/tei:textClass', ns)
@@ -2888,7 +2893,7 @@ if __name__ == '__main__':
 
 	results = ScopusSearch(search_query, view='COMPLETE', refresh=True)
 	df_result = pd.DataFrame(results.results)
-	# df_result.to_csv('./data/outputs/scopus_search_results.csv', index=False)
+	df_result.to_csv('./data/outputs/scopus_search_results.csv', index=False)
 
 	# df_result = pd.read_csv('./data/outputs/scopus_search_results_lgi.csv')
 	# df_result.fillna(value='', inplace=True)
@@ -2914,6 +2919,6 @@ if __name__ == '__main__':
 
 	auto_hal.debug_affiliation_search = False
 	auto_hal.debug_hal_upload = False
-	auto_hal.allow_create_new_affiliation = True
+	auto_hal.allow_create_new_affiliation = False
 
 	auto_hal.process_papers(df_result=df_result, row_range=row_range)
